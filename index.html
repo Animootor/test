@@ -1,0 +1,1259 @@
+<title>Anaconda HTN Observatory</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed 3D field view on the left, a scrolling "field notebook" brain monitor on the right
+   (stacks below the view on phones). Deliberately single dark theme: it is a night-swamp monitor. */
+:root{
+  --bg:#0d1310; --panel:#131b17; --panel2:#18221d; --line:#26332c;
+  --fg:#dfe7dc; --muted:#8b9b90; --accent:#d6a23c; --water:#55b3a8; --alert:#e2654c; --ok:#8cbd6c; --sight:#e8d36b; --vib:#c58be0; --scent:#7fc4e8;
+  --display:"Schibsted Grotesk", "Segoe UI", system-ui, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme:dark;
+}
+html,body{height:100%;background:var(--bg);color:var(--fg);font-family:var(--display);}
+*{box-sizing:border-box}
+#app{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr) 400px;}
+#stage{position:relative;min-width:0;overflow:hidden;background:var(--bg)}
+#view{position:absolute;inset:0}
+#view canvas{display:block;width:100%;height:100%;touch-action:none}
+#panel{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:14px 16px 40px;display:flex;flex-direction:column;gap:18px;min-width:0}
+@media (max-width:820px){
+  #app{grid-template-columns:minmax(0,1fr);grid-template-rows:56% 44%}
+  #panel{border-left:0;border-top:1px solid var(--line)}
+}
+.hud{position:absolute;left:12px;top:12px;right:12px;display:flex;flex-direction:column;gap:8px;pointer-events:none;align-items:flex-start}
+.hud>*{pointer-events:auto}
+.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;background:color-mix(in srgb,var(--bg) 78%,transparent);padding:6px 10px;border:1px solid var(--line);border-radius:6px}
+.brand .name{font-weight:800;letter-spacing:.01em;font-size:15px}
+.brand .name em{font-style:normal;color:var(--accent)}
+#clock{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.bar{display:flex;gap:4px;flex-wrap:wrap;background:color-mix(in srgb,var(--bg) 78%,transparent);padding:4px;border:1px solid var(--line);border-radius:6px}
+button,select{font:500 12px/1 var(--mono);color:var(--fg);background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:6px 8px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.on{background:var(--accent);color:#1b1406;border-color:var(--accent)}
+#toolHint{font:12px var(--mono);color:var(--fg);background:color-mix(in srgb,var(--bg) 78%,transparent);padding:4px 8px;border-radius:4px;max-width:420px}
+#toast{position:absolute;left:12px;bottom:12px;right:12px;display:flex;flex-direction:column;gap:4px;pointer-events:none;align-items:flex-start}
+#toast div{font:12px var(--mono);background:color-mix(in srgb,var(--bg) 85%,transparent);border-left:3px solid var(--accent);padding:4px 8px;border-radius:3px;animation:fade 6s forwards}
+@keyframes fade{0%,80%{opacity:1}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){#toast div{animation:none}}
+h2{margin:0 0 8px;font:600 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;gap:8px}
+h2 span{letter-spacing:0;text-transform:none}
+.now{display:flex;flex-direction:column;gap:6px}
+.intent{display:inline-block;font:600 11px var(--mono);padding:3px 7px;border-radius:3px;background:var(--panel2);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+.intent.hunting{background:var(--alert);color:#1b0b07;border-color:var(--alert)}
+.intent.feeding{background:var(--accent);color:#1b1406;border-color:var(--accent)}
+.intent.digesting{background:var(--water);color:#06201d;border-color:var(--water)}
+.intent.fleeing{background:var(--vib);color:#1d0b25;border-color:var(--vib)}
+.task{font-size:22px;font-weight:800;line-height:1.1;text-wrap:balance}
+.path{font:12px/1.5 var(--mono);color:var(--muted);word-break:break-word}
+.path b{color:var(--fg);font-weight:500}
+ul.clean{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+.cond{font:12px var(--mono);display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
+.dot.ok{background:var(--ok)}.dot.bad{background:var(--alert)}
+.queue li{font:12px var(--mono);color:var(--muted);padding:3px 6px;border-radius:3px}
+.queue li.cur{color:var(--fg);background:var(--panel2);border-left:2px solid var(--accent)}
+.drives{display:grid;grid-template-columns:auto minmax(0,1fr) 3.2em;gap:5px 8px;align-items:center;font:12px var(--mono)}
+.meter{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--accent)}
+.num{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+.prey{display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:4px 8px;align-items:center;font:12px var(--mono)}
+.sw{width:10px;height:10px;border-radius:2px}
+.prey .st{color:var(--muted)}
+.prey .tgt{color:var(--alert);font-weight:500}
+.chan{font-size:10px;padding:1px 4px;border-radius:2px;margin-left:4px}
+.chan.c3{background:var(--sight);color:#221d05}.chan.c2{background:var(--vib);color:#1d0b25}.chan.c1{background:var(--scent);color:#071b25}
+.ws{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 10px;font:11.5px var(--mono)}
+.ws div{display:flex;justify-content:space-between;gap:6px;padding:2px 4px;border-radius:2px;min-width:0}
+.ws div span:first-child{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws div.flash{background:color-mix(in srgb,var(--accent) 30%,transparent)}
+.ws div.nz span:last-child{color:var(--fg)}
+.ws div span:last-child{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.log{font:11.5px/1.45 var(--mono);display:flex;flex-direction:column;gap:5px;max-height:260px;overflow-y:auto}
+.log div{border-left:2px solid var(--line);padding-left:6px;word-break:break-word}
+.log .t{color:var(--muted)}
+.log .why{color:var(--accent)}
+.log .rej{color:var(--muted)}
+details summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.tree{font:11.5px/1.5 var(--mono);margin-top:8px;overflow-x:auto}
+.tree .n{white-space:nowrap;color:var(--muted);opacity:.55}
+.tree .n.valid{opacity:1}
+.tree .n.active{color:var(--fg);opacity:1}
+.tree .n.active>.nm{color:var(--accent)}
+.tree .n.cur{background:color-mix(in srgb,var(--accent) 25%,transparent);border-radius:2px}
+.tree .k{color:var(--muted);font-size:10px}
+.tag{font-size:9.5px;padding:0 3px;border:1px solid var(--line);border-radius:2px;margin-left:4px;color:var(--muted)}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+p.note{font-size:13px;line-height:1.5;color:var(--muted);margin:0;max-width:65ch}
+.decomp{font:11px/1.4 var(--mono);margin-top:8px;max-height:300px;overflow:auto;white-space:pre;color:var(--muted)}
+.decomp .okl{color:var(--fg)}
+</style>
+
+<div id="app">
+  <main id="stage">
+    <div id="view"></div>
+    <div class="hud">
+      <div class="brand"><span class="name"><em>Eunectes</em> · HTN planner</span><span id="clock">--:--</span></div>
+      <div class="bar" role="group" aria-label="Time">
+        <button id="bPause">Pause</button>
+        <button data-speed="1">1×</button><button data-speed="3" class="on">3×</button><button data-speed="10">10×</button>
+        <button id="bFollow" class="on">Follow snake</button>
+        <button id="bGizmo" class="on">Gizmos</button>
+      </div>
+      <div class="bar" role="group" aria-label="Click tool">
+        <button data-tool="look" class="on">Look</button>
+        <button data-tool="stomp">Stomp (vibration)</button>
+        <button data-tool="rush">Director: rush here</button>
+        <button data-tool="poke">Poke (threat)</button>
+      </div>
+      <div id="toolHint">Drag to orbit, scroll to zoom.</div>
+    </div>
+    <div id="toast"></div>
+  </main>
+
+  <aside id="panel">
+    <section class="now">
+      <h2>Snake brain <span id="persName"></span></h2>
+      <div><span id="intent" class="intent">idle</span></div>
+      <div class="task" id="task">—</div>
+      <div class="path" id="mtr"></div>
+      <ul class="clean" id="execConds"></ul>
+    </section>
+    <section>
+      <h2>Plan queue <span id="rejects"></span></h2>
+      <ul class="clean queue" id="queue"></ul>
+    </section>
+    <section>
+      <h2>Drives</h2>
+      <div class="drives" id="drives"></div>
+    </section>
+    <section>
+      <h2>Prey &amp; beliefs <span>sight · vibration · scent</span></h2>
+      <div class="prey" id="prey"></div>
+    </section>
+    <section>
+      <h2>World state <span>21 bytes</span></h2>
+      <div class="ws" id="ws"></div>
+    </section>
+    <section>
+      <h2>Replans <span>newest first, last 32</span></h2>
+      <div class="log" id="replans"></div>
+    </section>
+    <section>
+      <details open><summary>Domain tree</summary><div class="tree" id="tree"></div></details>
+    </section>
+    <section>
+      <details><summary>Last decomposition</summary><div class="decomp" id="decomp"></div></details>
+    </section>
+    <section>
+      <h2>Scenario</h2>
+      <div class="row">
+        <label for="pers" class="k" style="font:12px var(--mono);color:var(--muted)">Snake</label>
+        <select id="pers">
+          <option value="giant">Giant female (calm, patient)</option>
+          <option value="male">Small male (fast, bold)</option>
+        </select>
+        <button id="bReset">Restart</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span style="font:12px var(--mono);color:var(--muted)">Jump to</span>
+        <button data-day="0.24">Dawn</button><button data-day="0.42">Day</button><button data-day="0.73">Dusk</button><button data-day="0.95">Night</button>
+        <button id="bHungry">Make hungry</button>
+      </div>
+    </section>
+    <section>
+      <h2>Events</h2>
+      <div class="log" id="events"></div>
+    </section>
+    <section>
+      <p class="note">The snake has three senses: sight (20 m, 200° wedge, blocked by trunks), ground vibration (prey moving faster than 0.5 m/s, felt with 15% position error) and scent trails. Crouching humans in tall grass are invisible and silent. Each behaviour runs as a task chosen by a Fluid-HTN-style planner. A higher branch only interrupts a running plan when it wins the method-traversal-record comparison.</p>
+    </section>
+  </aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+'use strict';
+(function(){
+/* ============================================================
+   0. Small maths helpers (simulation lives on the x/z plane)
+   ============================================================ */
+const TAU=Math.PI*2;
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
+const sub=(a,b)=>({x:a.x-b.x,z:a.z-b.z});
+const add=(a,b)=>({x:a.x+b.x,z:a.z+b.z});
+const mul=(a,s)=>({x:a.x*s,z:a.z*s});
+const len=a=>Math.hypot(a.x,a.z);
+const norm=a=>{const l=len(a)||1;return {x:a.x/l,z:a.z/l}};
+const dot=(a,b)=>a.x*b.x+a.z*b.z;
+const hdir=h=>({x:Math.cos(h),z:Math.sin(h)});
+const headingOf=v=>Math.atan2(v.z,v.x);
+const wrapA=a=>{while(a>Math.PI)a-=TAU;while(a<-Math.PI)a+=TAU;return a};
+const rand=(a,b)=>a+Math.random()*(b-a);
+const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
+const randInCircle=r=>{const a=Math.random()*TAU,d=Math.sqrt(Math.random())*r;return {x:Math.cos(a)*d,z:Math.sin(a)*d}};
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function segDist(p,a,b){const ab=sub(b,a),ap=sub(p,a);const L=dot(ab,ab)||1;const t=clamp(dot(ap,ab)/L,0,1);return dist(p,add(a,mul(ab,t)))}
+
+/* ============================================================
+   1. World layout: a small island with four pools
+   ============================================================ */
+const ISLAND_R=150;
+const PONDS=[
+  {name:'Reed Pool',x:-38,z:28,r:18},
+  {name:'Stone Pond',x:58,z:-38,r:14},
+  {name:'Alder Pond',x:28,z:72,r:11},
+  {name:'Mud Hollow',x:-72,z:-58,r:15},
+];
+const HOME=PONDS[0];
+const HOME_RANGE=100; // home range radius around Reed Pool (plan §1.4: a preferred area, not a territory)
+const CAMP={x:6,z:-8};
+const TERMINALS=[{x:-100,z:8},{x:96,z:34},{x:-6,z:-104},{x:46,z:112}];
+const rng=mulberry32(11);
+PONDS.forEach(o=>{const a=rng()*TAU;o.bask={x:o.x+Math.cos(a)*(o.r+1.2),z:o.z+Math.sin(a)*(o.r+1.2)}});
+const TREES=[];
+while(TREES.length<80){
+  const a=rng()*TAU,d=Math.sqrt(rng())*(ISLAND_R-12);const p={x:Math.cos(a)*d,z:Math.sin(a)*d};
+  if(PONDS.some(o=>dist(o,p)<o.r+5))continue; if(dist(p,CAMP)<14)continue;
+  if(TERMINALS.some(t=>dist(t,p)<7))continue; if(TREES.some(t=>dist(t,p)<5))continue;
+  TREES.push({x:p.x,z:p.z,r:0.55,h:5+rng()*6,crown:2.4+rng()*2});
+}
+const GRASS=[];
+PONDS.forEach(o=>{for(let k=0;k<2;k++){const a=rng()*TAU;GRASS.push({x:o.x+Math.cos(a)*(o.r+5),z:o.z+Math.sin(a)*(o.r+5),r:5+rng()*3})}});
+for(let k=0;k<5;k++){const a=rng()*TAU,d=30+rng()*90;GRASS.push({x:Math.cos(a)*d,z:Math.sin(a)*d,r:6+rng()*4})}
+
+const pondAt=(p,pad=0)=>{for(const o of PONDS)if(dist(o,p)<o.r+pad)return o;return null};
+const nearestPond=p=>PONDS.reduce((b,o)=>dist(o,p)-o.r<dist(b,p)-b.r?o:b);
+const inGrass=p=>GRASS.some(g=>dist(g,p)<g.r);
+const nearestTree=p=>TREES.reduce((b,t)=>dist(t,p)<dist(b,p)?t:b);
+const nearestGrass=p=>GRASS.reduce((b,g)=>dist(g,p)<dist(b,p)?g:b);
+function clampIsland(p,m=6){const l=len(p);return l>ISLAND_R-m?mul(p,(ISLAND_R-m)/l):p}
+function losBlocked(a,b){for(const t of TREES){if(Math.abs(t.x-a.x)>60&&Math.abs(t.x-b.x)>60)continue;if(segDist(t,a,b)<t.r+0.15)return true}return false}
+function edgePoint(o,toward,inset){const d=norm(sub(toward,o));return add(o,mul(d,o.r-inset))}
+
+/* ============================================================
+   2. Clock: game seconds, day fraction, time-of-day buckets
+   ============================================================ */
+const clock={t:0,day:0.73,dayLen:360,scale:3,paused:false};
+const todOf=d=>d<0.2||d>=0.8?0:d<0.3?1:d<0.7?2:3;
+const TOD_NAMES=['night','dawn','day','dusk'];
+const sunElev=d=>Math.sin((d-0.25)*TAU);
+
+/* ============================================================
+   3. Prey (humans, capybaras) and observer noise; scent marks
+   ============================================================ */
+const SCENT_LIFE=240,SCENT_SPACING=5,SCENT_RING=64;
+let PREY_ID=0;
+class Prey{
+  constructor(kind,name,color,pos){
+    this.id=PREY_ID++;this.kind=kind;this.name=name;this.color=color;
+    this.pos={...pos};this.home={...pos};this.vel={x:0,z:0};this.h=Math.random()*TAU;this.speed=0;
+    this.state='idle';this.timer=rand(1,5);this.goal=null;this.goalSpeed=1.4;this.crouch=false;
+    this.marks=[];this.lastMark={...pos};this.respawnAt=0;this.fleeUntil=0;this.immuneUntil=0;
+  }
+  get active(){return this.state!=='eaten'}
+  liveMarks(now){return this.marks.filter(m=>now-m.t<SCENT_LIFE)}
+  looksAt(p){const d=dist(this.pos,p);return this.kind==='human'&&d<30&&dot(hdir(this.h),norm(sub(p,this.pos)))>0.75}
+  pickGoal(){
+    if(this.kind==='human'){
+      const r=Math.random();let g;
+      if(r<0.35){g=pick(TERMINALS);this.dwell=rand(8,20)}
+      else if(r<0.65){const o=pick(PONDS);const a=Math.random()*TAU;g={x:o.x+Math.cos(a)*(o.r+1.3),z:o.z+Math.sin(a)*(o.r+1.3)};this.dwell=rand(5,12)}
+      else if(r<0.85){g=add(CAMP,randInCircle(5));this.dwell=rand(6,16)}
+      else{g=clampIsland(randInCircle(ISLAND_R-15),10);this.dwell=rand(2,6)}
+      this.goal=g;const s=Math.random();
+      this.crouch=false;
+      if(s<0.68)this.goalSpeed=1.4;else if(s<0.84)this.goalSpeed=3.2;else{this.goalSpeed=0.45;this.crouch=true}
+    }else{
+      const o=this.homePond;const a=Math.random()*TAU;const d=o.r+rand(1.5,9);
+      this.goal={x:o.x+Math.cos(a)*d,z:o.z+Math.sin(a)*d};this.goalSpeed=rand(0.6,1.0);this.dwell=rand(6,20);
+    }
+    this.state='walk';
+  }
+  startFlee(from){
+    this.state='flee';this.aware=0;this.crouch=false;
+    const away=norm(sub(this.pos,from));
+    this.goal=clampIsland(add(this.pos,mul(away,40)),10);
+    this.fleeUntil=clock.t+rand(6,10);
+  }
+  update(dt,world){
+    const now=clock.t;
+    if(this.state==='caught'){this.vel={x:0,z:0};return}
+    if(this.state==='eaten'){if(now>=this.respawnAt)world.respawn(this);return}
+    const snake=world.snake;
+    if(snake&&now>this.immuneUntil){
+      const sh=snake.head,d=dist(this.pos,sh),night=todOf(clock.day)===0;
+      const range=this.kind==='human'?(night?9:22):(night?6:11);
+      const fov=this.kind==='human'?dot(hdir(this.h),norm(sub(sh,this.pos)))>Math.cos(1.4):true;
+      const canSee=!snake.hiddenToPrey()&&d<range&&fov&&!losBlocked(this.pos,sh);
+      // awareness builds up over time; a slow snake in grass or at dusk takes longer to notice
+      let rate=canSee?1/1.2:0;
+      if(rate){if(snake.speed<1)rate*=0.3;if(inGrass(sh))rate*=0.4;if(d<5)rate*=2}
+      this.aware=clamp((this.aware||0)+(rate?rate*dt:-dt*0.25),0,1.2);
+      if(snake.speed>5&&d<9)this.aware+=dt*4; // ~0.25 s reaction time to a lunge
+      if(this.aware>=1&&this.state!=='flee'){this.startFlee(sh);world.event(`${this.name} spotted the snake and runs`)}
+    }
+    let speed=0;
+    if(this.state==='flee'){speed=this.kind==='human'?5.2:4.2;if(now>this.fleeUntil||dist(this.pos,this.goal)<2){this.state='idle';this.timer=rand(3,8)}}
+    else if(this.state==='idle'){this.timer-=dt;if(this.timer<=0)this.pickGoal()}
+    else if(this.state==='walk'){speed=this.goalSpeed;if(dist(this.pos,this.goal)<1.5){this.state='idle';this.timer=this.dwell;speed=0}}
+    if(speed>0){
+      const dh=wrapA(headingOf(sub(this.goal,this.pos))-this.h);this.h+=clamp(dh,-4*dt,4*dt);
+      let v=mul(hdir(this.h),speed);let np=add(this.pos,mul(v,dt));
+      const o=pondAt(np,1.2);if(o){const out=norm(sub(np,o));np=add(o,mul(out,o.r+1.2))}
+      np=clampIsland(np,4);v=mul(sub(np,this.pos),1/dt);this.pos=np;this.vel=v;
+    }else this.vel={x:0,z:0};
+    this.speed=len(this.vel);
+    if(dist(this.pos,this.lastMark)>=SCENT_SPACING){this.marks.push({x:this.pos.x,z:this.pos.z,t:now,prey:this});if(this.marks.length>SCENT_RING)this.marks.shift();this.lastMark={...this.pos}}
+  }
+}
+class Noise{ // an observer "stomp": vibration only, no body, no scent
+  constructor(p){this.id=PREY_ID++;this.kind='noise';this.name='Stomp';this.pos={...p};this.vel={x:0,z:0};this.speed=6;this.state='noise';this.expires=clock.t+2.5;this.marks=[];this.h=0}
+  get active(){return clock.t<this.expires}
+  liveMarks(){return []} looksAt(){return false}
+  update(){}
+}
+
+/* ============================================================
+   4. Snake body: head steering + path-following skeleton
+   ============================================================ */
+const BASE_SPEED=3.0;
+class SnakeBody{
+  constructor(p,start,h){
+    this.p=p;this.head={...start};this.h=h;this.dH=h;this.speed=0;this.tSpeed=0;this.turnMul=1;
+    this.path=[];const back=hdir(h+Math.PI);
+    const n=Math.ceil(p.segs*p.spacing/0.2)+30;
+    for(let i=n;i>=0;i--)this.path.push(add(start,mul(back,i*0.2)));
+    this.maxPath=n+40;this.mouth=0;this.mouthTarget=0;this.submerge=false;this.pres='Normal';this.tongue=false;this.sweep=false;this.sweepT=0;this.bulge=0;
+  }
+  steerTo(pt,m,turn=1){this.dH=headingOf(sub(pt,this.head));this.tSpeed=BASE_SPEED*m;this.turnMul=turn}
+  steerHeading(h,m,turn=1){this.dH=h;this.tSpeed=BASE_SPEED*m;this.turnMul=turn}
+  halt(){this.tSpeed=0}
+  inWater(){return !!pondAt(this.head,-0.5)}
+  hiddenToPrey(){return (this.submerge&&this.inWater())||(this.speed<0.3&&inGrass(this.head))}
+  update(dt){
+    let want=hdir(this.dH);
+    if(this.tSpeed>0&&this.tSpeed<6){ // soft avoidance (not during a lunge)
+      for(const t of TREES){const v=sub(this.head,t);const d=len(v);if(d<3.2&&dot(want,v)<0){want=add(want,mul(norm(v),(3.2-d)*0.8))}}
+      if(len(this.head)>ISLAND_R-10)want=add(want,mul(norm(mul(this.head,-1)),0.8));
+    }
+    const dh=headingOf(want);
+    const medium=this.inWater()?1.25:0.8;
+    const target=this.tSpeed*medium*this.p.speedMul;
+    const acc=target>this.speed?(target>6?45:6):12;
+    this.speed+=clamp(target-this.speed,-acc*dt,acc*dt);
+    const maxT=1.7*this.turnMul*dt*(0.35+Math.min(1,this.speed/2));
+    this.h=wrapA(this.h+clamp(wrapA(dh-this.h),-maxT,maxT));
+    this.head=clampIsland(add(this.head,mul(hdir(this.h),this.speed*dt)),3);
+    const last=this.path[this.path.length-1];
+    if(dist(last,this.head)>0.2){this.path.push({...this.head});if(this.path.length>this.maxPath)this.path.shift()}
+    this.mouth+=clamp(this.mouthTarget-this.mouth,-4*dt,4*dt);
+    this.sweepT+=dt;
+  }
+  mouthPos(){return add(this.head,mul(hdir(this.h),0.9*this.p.size))}
+  segments(){ // sample body points every `spacing` metres back along the path
+    const out=[{...this.head}];const sp=this.p.spacing;let need=sp;let prev=this.head;
+    for(let i=this.path.length-1;i>=0&&out.length<this.p.segs;i--){
+      let cur=this.path[i];let d=dist(prev,cur);
+      while(d>=need&&out.length<this.p.segs){const t=need/d;const q={x:lerp(prev.x,cur.x,t),z:lerp(prev.z,cur.z,t)};out.push(q);prev=q;d=dist(prev,cur);need=sp}
+      need-=d;prev=cur;
+    }
+    while(out.length<this.p.segs)out.push({...out[out.length-1]});
+    return out;
+  }
+}
+function coilInit(c,r0,r1,turns){
+  const s=c.snake;let side=Math.random()<0.5?1:-1;
+  const o=pondAt(s.head,1); // in water: curl toward the middle of the pool so the coil stays wet
+  if(o){const l={x:-Math.sin(s.h),z:Math.cos(s.h)};side=dot(l,sub(o,s.head))>=0?1:-1}
+  const left={x:-Math.sin(s.h)*side,z:Math.cos(s.h)*side};
+  const center=add(s.head,mul(left,r0));const v=sub(s.head,center);const f=hdir(s.h);
+  const rot=Math.sign(v.x*f.z-v.z*f.x)||1;
+  return {center,r0,r1,turns,rot,acc:0,lastA:null,done:false};
+}
+function coilStep(c,st,m){
+  const s=c.snake;const v=sub(s.head,st.center);const a=Math.atan2(v.z,v.x);
+  if(st.lastA!==null)st.acc+=Math.abs(wrapA(a-st.lastA));st.lastA=a;
+  const prog=st.acc/(TAU*st.turns);if(prog>=1){st.done=true;s.halt();return true}
+  const r=lerp(st.r0,st.r1,prog);const ta=a+st.rot*0.7;
+  s.steerTo({x:st.center.x+Math.cos(ta)*r,z:st.center.z+Math.sin(ta)*r},m,2.8);
+  return false;
+}
+
+/* ============================================================
+   5. Fluid-HTN-style planner (domain, context, MTR, partial plans, slots)
+   ============================================================ */
+const C=0,S=1,F=2,PARTIAL=3; // PARTIAL: decomposition hit a PausePlan
+const EffectType={PlanOnly:'PlanOnly',PlanAndExecute:'PlanAndExecute',Permanent:'Permanent'};
+const WS_NAMES=['BestContact','TargetVisible','StrikeWindow','HasTrail','InPreyPath','Carrying','AtWater','AtRefuge','InTree','InHomeRange','Hunger','Digesting','Thermal','Stress','TimeOfDay','Season','Breeding','Shedding','DirectorOrder','Claim','Intent'];
+const WS={};WS_NAMES.forEach((n,i)=>WS[n]=i);
+const B=['0','1'];
+const WS_LABELS={BestContact:['none','scent','vibration','sight'],TargetVisible:B,StrikeWindow:B,HasTrail:B,InPreyPath:B,Carrying:B,AtWater:B,AtRefuge:B,InTree:B,InHomeRange:['inside','outside'],
+  Hunger:['sated','low','hungry','starving'],Digesting:['no','sluggish','heavy'],Thermal:['ok','cold','hot'],Stress:['calm','wary','threatened'],TimeOfDay:TOD_NAMES,Season:['wet','dry'],
+  Breeding:['none','receptive','tracking','aggregated','post-mating'],Shedding:['no','opaque'],DirectorOrder:['none','rush','camp','withdraw'],Claim:['free','mine','other'],Intent:['idle','hunting','feeding','digesting','breeding','fleeing']};
+const INTENT={idle:0,hunting:1,feeding:2,digesting:3,breeding:4,fleeing:5};
+const URGENT=new Set([WS.Stress,WS.DirectorOrder]);
+
+class SnakeContext{
+  constructor(){
+    this.ws=new Uint8Array(WS_NAMES.length);this.pws=null;this.planning=false;
+    this.dirty=true;this.dirtyField=-1;this.dirtyReason='start';this.lastChanged=-1;this.lastChangedAt=-9;
+    this.mtr=[];this.mtrNames=[];this.active=new Set();this.decompLog=[];this.replans=[];this.rejected=0;
+  }
+  get now(){return clock.t}
+  getState(i){return this.planning?this.pws[i]:this.ws[i]}
+  hasState(i,v){return this.getState(i)===v}
+  setState(i,v,noDirty){
+    if(this.planning){this.pws[i]=v;return}
+    if(this.ws[i]===v)return;this.ws[i]=v;this.lastChanged=i;this.lastChangedAt=clock.t;
+    if(!noDirty){this.dirty=true;this.dirtyField=i;this.dirtyReason=`${WS_NAMES[i]} → ${WS_LABELS[WS_NAMES[i]][v]??v}`}
+  }
+}
+
+const condsOK=(node,c)=>node.conds.every(([,fn])=>fn(c));
+class Planner{
+  constructor(domain){this.domain=domain;this.rejected=0;this.queue=[];this.current=null;this.op=null;this.partial=[];this.taskStart=0}
+  elapsed(){return clock.t-this.taskStart}
+  log(c,depth,name,res){if(c.decompLog.length<400)c.decompLog.push({depth,name,res})}
+  decompose(node,c,r,depth){
+    switch(node.type){
+      case 'action':{
+        if(!condsOK(node,c)){this.log(c,depth,node.name,'condition failed');return F}
+        r.plan.push(node);r.active.push(node);for(const e of node.effects)e.fn(c,e.type);
+        this.log(c,depth,node.name,'→ plan');return S;
+      }
+      case 'select':{
+        if(!condsOK(node,c)){this.log(c,depth,node.name,'condition failed');return F}
+        this.log(c,depth,node.name,'select');
+        for(let i=0;i<node.children.length;i++){
+          const ch=node.children[i];const snap=c.pws.slice(),pl=r.plan.length,pa=r.partial.length,ac=r.active.length;
+          r.mtr.push(i);r.names.push(ch.name||'?');
+          const st=this.decompose(ch,c,r,depth+1);
+          if(st!==F){r.active.push(node);return st}
+          c.pws=snap;r.plan.length=pl;r.partial.length=pa;r.active.length=ac;r.mtr.pop();r.names.pop();
+        }
+        return F;
+      }
+      case 'sequence':{
+        if(!condsOK(node,c)){this.log(c,depth,node.name,'condition failed');return F}
+        this.log(c,depth,node.name,'sequence');
+        const st=this.decomposeSeqFrom(node,0,c,r,depth);if(st!==F)r.active.push(node);return st;
+      }
+      case 'slot':{
+        const sub=this.domain.slots[node.id];
+        if(!sub){this.log(c,depth,node.name,'slot empty');return F}
+        this.log(c,depth,node.name,'slot');
+        const st=this.decompose(sub,c,r,depth+1);if(st!==F)r.active.push(node);return st;
+      }
+    }
+    return F;
+  }
+  decomposeSeqFrom(node,start,c,r,depth){
+    const snap=c.pws.slice(),pl=r.plan.length,pa=r.partial.length,ac=r.active.length;
+    for(let i=start;i<node.children.length;i++){
+      const ch=node.children[i];
+      if(ch.type==='pause'){this.log(c,depth+1,'PausePlan','partial plan');r.partial.push({task:node,index:i+1});return PARTIAL}
+      const st=this.decompose(ch,c,r,depth+1);
+      if(st===F){c.pws=snap;r.plan.length=pl;r.partial.length=pa;r.active.length=ac;this.log(c,depth,node.name,'sequence rolled back');return F}
+      if(st===PARTIAL){r.partial.push({task:node,index:i+1});return PARTIAL}
+    }
+    return S;
+  }
+  beginPlanning(c){c.planning=true;c.pws=c.ws.slice();c.decompLog=[]}
+  endPlanning(c){c.planning=false;c.pws=null}
+  applyPermanent(c,plan){for(const t of plan)for(const e of t.effects)if(e.type===EffectType.Permanent)e.fn(c,e.type)}
+  clearPlan(c){this.queue=[];this.partial=[];c.mtr=[];c.mtrNames=[];c.active=new Set()}
+  stopOp(c,how){if(this.op&&this.op.stop)this.op.stop(c,how);this.current=null;this.op=null}
+  findPlan(c){
+    const reason=c.dirtyReason;c.dirty=false;
+    this.beginPlanning(c);
+    const r={plan:[],mtr:[],names:[],partial:[],active:[]};
+    const st=this.decompose(this.domain.root,c,r,0);
+    this.endPlanning(c);
+    if(st===F)return;
+    const running=this.current||this.queue.length||this.partial.length;
+    if(running&&!mtrLess(r.mtr,c.mtr)){this.rejected++;c.lastReject=`${r.names.join(' › ')} (${reason})`;return}
+    const from=c.mtrNames.join(' › ')||'(no plan)';
+    if(this.current)this.stopOp(c,'abort');
+    this.queue=r.plan.slice();this.partial=r.partial;c.mtr=r.mtr;c.mtrNames=r.names;c.active=new Set(r.active);
+    this.applyPermanent(c,r.plan);
+    c.replans.unshift({t:clock.t,from,to:r.names.join(' › '),reason,plan:r.plan.map(t=>t.name).join(', ')});
+    if(c.replans.length>32)c.replans.pop();
+  }
+  resumePartial(c){
+    const entry=this.partial.shift();
+    this.beginPlanning(c);
+    const r={plan:[],mtr:c.mtr.slice(),names:c.mtrNames.slice(),partial:[],active:[]};
+    const st=this.decomposeSeqFrom(entry.task,entry.index,c,r,1);
+    this.endPlanning(c);
+    if(st===F){this.clearPlan(c);c.dirty=true;c.dirtyReason=`partial plan of ${entry.task.name} failed`;return}
+    this.queue=r.plan;this.partial=r.partial.concat(this.partial);c.mtr=r.mtr;c.mtrNames=r.names;r.active.forEach(n=>c.active.add(n));
+    this.applyPermanent(c,r.plan);
+    if(!this.queue.length&&!this.partial.length)this.clearPlan(c);
+  }
+  tick(c,dt,allowReplan=true){
+    const idle=!this.current&&!this.queue.length;
+    if(c.dirty||idle){
+      const dwell=this.op&&this.op.minDwell&&this.elapsed()<this.op.minDwell&&!URGENT.has(c.dirtyField);
+      if(!dwell){
+        if(!c.dirty&&idle&&this.partial.length)this.resumePartial(c);
+        else this.findPlan(c);
+      }
+    }
+    if(!this.current&&this.queue.length){
+      const t=this.queue.shift();
+      if(!condsOK(t,c)){const bad=t.conds.find(([,fn])=>!fn(c));this.clearPlan(c);c.dirty=true;c.dirtyField=-1;c.dirtyReason=`${t.name}: condition "${bad[0]}" failed on dequeue`;return}
+      this.current=t;this.op=t.op();this.taskStart=clock.t;if(this.op.start)this.op.start(c);
+    }
+    if(this.current){
+      const t=this.current;
+      for(const [label,fn] of t.exec){
+        if(!fn(c)){
+          this.stopOp(c,'abort');this.clearPlan(c);c.dirty=true;c.dirtyField=-1;c.dirtyReason=`${t.name}: executing condition "${label}" failed`;
+          if(allowReplan)this.tick(c,0,false);return;
+        }
+      }
+      this.op.t=this.elapsed();
+      const st=this.op.update(c,dt);
+      if(st===S){
+        this.stopOp(c,'success');
+        for(const e of t.effects)if(e.type===EffectType.PlanAndExecute)e.fn(c,e.type);
+      }else if(st===F){
+        this.stopOp(c,'failure');this.clearPlan(c);c.dirty=true;c.dirtyField=-1;c.dirtyReason=`${t.name} failed`;
+      }
+    }
+  }
+}
+function mtrLess(a,b){const n=Math.min(a.length,b.length);for(let i=0;i<n;i++){if(a[i]<b[i])return true;if(a[i]>b[i])return false}return false}
+
+/* Domain-builder helpers (the shape mirrors Fluid's DomainBuilder) */
+const A=(name,o={})=>({type:'action',name,conds:o.conds||[],exec:o.exec||[],op:o.op||Ops.succeed,effects:o.effects||[],tag:o.tag||''});
+const SEL=(name,conds,children,tag='')=>({type:'select',name,conds,children,tag});
+const SEQ=(name,conds,children,tag='')=>({type:'sequence',name,conds,children,tag});
+const PAUSE=()=>({type:'pause',name:'PausePlan',conds:[]});
+const SLOT=(id,name)=>({type:'slot',id,name,conds:[]});
+const has=(i,v)=>c=>c.getState(i)===v;
+const ge=(i,v)=>c=>c.getState(i)>=v;
+const lt=(i,v)=>c=>c.getState(i)<v;
+const ne=(i,v)=>c=>c.getState(i)!==v;
+const eff=(name,type,fn)=>({name,type,fn});
+const setWS=(name,type,pairs)=>eff(name,type,c=>{for(const [i,v] of pairs)c.setState(i,v)});
+
+/* ============================================================
+   6. Operators (what each primitive task does to the body)
+   ============================================================ */
+const sl=c=>c.getState(WS.Digesting)>=1?0.6:1;
+function mkOp(name,def){return ()=>Object.assign({name,t:0,minDwell:0},def)}
+const prey_=c=>c.forcedTarget||(c.target&&c.target.prey);
+function moveOp(name,getP,m,o={}){return mkOp(name,{
+  start(c){this.p=getP(c);c.moveGoal=this.p;c.snake.submerge=false;c.snake.pres=o.pres||'Moving';c.snake.tongue=!!o.tongue;this.last={...c.snake.head};this.lastT=0},
+  update(c){
+    if(!this.p)return F;
+    if(dist(c.snake.head,this.p)<(o.arrive||2.5))return S;
+    if(this.t-this.lastT>8){if(dist(this.last,c.snake.head)<1)return F;this.last={...c.snake.head};this.lastT=this.t}
+    if(o.timeout&&this.t>o.timeout)return F;
+    c.snake.steerTo(this.p,(typeof m==='function'?m(c):m)*sl(c));return C;
+  },
+  stop(c,how){c.snake.halt();c.moveGoal=null;c.snake.tongue=false;if(o.onStop)o.onStop(c,how)}
+})}
+function coilRestOp(name,o={}){return mkOp(name,{
+  minDwell:o.minDwell||0,
+  start(c){this.coil=coilInit(c,o.r0||3,o.r1||1.4,o.turns||1.25);c.snake.submerge=!!o.submerge;c.snake.pres=o.pres||'Coiled';this.max=typeof o.maxTime==='function'?o.maxTime(c):o.maxTime;this.doneAt=null},
+  update(c,dt){
+    if(!this.coil.done)coilStep(c,this.coil,o.mul||0.45);
+    else{c.snake.halt();c.snake.sweep=true;if(this.doneAt===null)this.doneAt=this.t}
+    if(o.hold!==undefined&&this.doneAt!==null&&this.t-this.doneAt>=o.hold)return S;
+    if(this.max&&this.t>=this.max)return S;
+    return C;
+  },
+  stop(c,how){c.snake.sweep=false;c.snake.halt();if(o.onStop)o.onStop(c,how)}
+})}
+const Ops={
+  succeed:mkOp('Succeed',{update:()=>S}),
+  idle:mkOp('Idle',{start(c){c.snake.halt();c.snake.pres='Normal';c.snake.submerge=false},update(c){c.snake.halt();c.snake.sweep=true;return C},stop(c){c.snake.sweep=false}}),
+  telegraph:mkOp('Telegraph',{
+    start(c){this.dur=rand(1,2);c.snake.mouthTarget=1;c.snake.pres='Telegraph';c.snake.submerge=false},
+    update(c){const p=prey_(c);if(!p||!p.active)return F;c.snake.steerTo(p.pos,0.08,2.5);return this.t>=this.dur?S:C},
+    stop(c,how){if(how!=='success')c.snake.mouthTarget=0;c.snake.halt()}
+  }),
+  lunge:mkOp('Lunge',{
+    start(c){const p=prey_(c);const lead=p?add(p.pos,mul(p.vel,0.15)):c.snake.mouthPos();this.h=headingOf(sub(lead,c.snake.head));c.strikes++;c.drives.fatigue=Math.min(1,c.drives.fatigue+0.3);c.lunging=true;c.snake.pres='Lunge'},
+    update(c){
+      c.snake.steerHeading(this.h,3,0.35);
+      const m=c.snake.mouthPos();
+      for(const p of c.world.prey){if(p.kind==='noise'||!p.active||p.state==='caught')continue;if(dist(p.pos,m)<1.7+(p.kind==='capybara'?0.3:0)){c.capture(p);return S}}
+      return this.t>=0.9?F:C;
+    },
+    stop(c,how){c.lunging=false;c.snake.mouthTarget=c.carried?0.55:0;c.snake.halt();if(how==='failure')c.world.event('Strike missed')}
+  }),
+  pursue:mkOp('Pursue',{
+    start(c){c.drives.fatigue=Math.min(1,c.drives.fatigue+0.3);c.snake.pres='Pursuit'},
+    update(c){const p=prey_(c);if(!p||!p.active)return F;if(c.ws[WS.StrikeWindow]===1)return S;if(this.t>4)return F;c.snake.steerTo(p.pos,1.6*sl(c),1.5);return C},
+    stop(c){c.snake.halt()}
+  }),
+  sneak:mkOp('Sneak',{
+    start(c){c.snake.pres='Sneak';c.snake.submerge=false},
+    update(c){const p=prey_(c);if(!p||!p.active)return F;c.snake.submerge=c.snake.inWater();if(dist(c.snake.head,p.pos)<=c.p.strikeRange)return S;c.snake.steerTo(p.pos,0.3*sl(c));return C},
+    stop(c){c.snake.halt()}
+  }),
+  creep:mkOp('Creep',{
+    start(c){c.snake.pres='Creep';c.snake.submerge=false},
+    update(c){const p=prey_(c);if(!p||!p.active)return F;c.snake.submerge=c.snake.inWater();if(dist(c.snake.head,p.pos)<=c.p.strikeRange)return S;
+      if(p.looksAt(c.snake.head))c.snake.halt();else c.snake.steerTo(p.pos,0.2*sl(c));return C},
+    stop(c){c.snake.halt()}
+  }),
+  goToInterest:moveOp('GoToInterest',c=>{const b=c.target;if(!b)return null;c.investigatePoint=clampIsland(add(b.lastKnown,randInCircle(b.positionError)),5);return c.investigatePoint},0.4,{tongue:true,arrive:3}),
+  lookAround:mkOp('LookAround',{start(c){this.dur=rand(3,6);c.snake.halt();c.snake.tongue=true;c.snake.sweep=true},update(c){c.snake.halt();return this.t>=this.dur?S:C},stop(c){c.snake.tongue=false;c.snake.sweep=false}}),
+  cutAcross:mkOp('CutAcross',{
+    stop(c,how){c.snake.halt();c.moveGoal=null;if(how==='failure')c.cutCooldownUntil=clock.t+30},
+    recalc(c){const b=c.target;if(!b)return;const d=b.travelDir||norm(sub(b.lastKnown,c.snake.head));this.p=clampIsland(add(b.lastKnown,mul(d,18)),8);c.moveGoal=this.p;this.rt=this.t},
+    start(c){this.rt=0;this.recalc(c);c.snake.submerge=false},
+    update(c){
+      if(!c.target||!this.p)return F;if(this.t-this.rt>2)this.recalc(c);if(this.t>40)return F;
+      if(c.ws[WS.InPreyPath]===1&&dist(c.snake.head,this.p)<8)return S;
+      const far=dist(c.snake.head,this.p)>40;c.snake.pres=far?'Rush':'CutAcross';c.snake.steerTo(this.p,(far?0.8:0.4)*sl(c));return C;
+    },
+  }),
+  holdInPath:coilRestOp('HoldAndCoil',{r0:2.5,r1:1.4,turns:1.25,pres:'Coiled'}),
+  followTrail:mkOp('FollowTrail',{
+    pickNext(c){const p=c.target&&c.target.prey;this.m=null;if(!p)return;let bd=1e9;
+      for(const m of p.liveMarks(clock.t)){if(m.t<=this.lastT)continue;const d=dist(m,c.snake.head);if(d<40&&d<bd){bd=d;this.m=m}}c.moveGoal=this.m},
+    start(c){this.lastT=-1;this.pickNext(c);c.snake.tongue=true;c.snake.pres='Trailing';c.snake.submerge=false},
+    update(c){if(!c.target)return F;if(!this.m)return S;if(dist(c.snake.head,this.m)<2){this.lastT=this.m.t;this.pickNext(c);if(!this.m)return S}
+      c.snake.steerTo(this.m,0.4*sl(c));return C},
+    stop(c){c.snake.halt();c.snake.tongue=false;c.moveGoal=null}
+  }),
+  chooseWaterSite:mkOp('ChooseSite',{
+    start(c){
+      const hs=c.world.hotspot();const ranked=PONDS.filter(o=>dist(o,HOME)<HOME_RANGE).map(o=>({o,s:dist(o,hs)+Math.random()*25})).sort((a,b)=>a.s-b.s);
+      const o=ranked[0].o;c.ambushPond=o;c.ambushPoint=edgePoint(o,hs,2.5);c.ambushChosenAt=clock.t;c.ambushStaleAt=Infinity;
+      c.world.event(`Chose ambush site at ${o.name}`);
+    },
+    update:()=>S
+  }),
+  goToSite:moveOp('GoToSite',c=>c.ambushPoint,0.4,{arrive:2}),
+  submerge:coilRestOp('Submerge',{r0:2.2,r1:1.2,turns:1,submerge:true,pres:'Submerged',minDwell:5,
+    maxTime:c=>c.p.patience*(c.getState(WS.Digesting)>=1?1.5:1),onStop:(c,how)=>{if(how==='success')c.ambushStaleAt=clock.t}}),
+  drag:moveOp('Drag',c=>{const o=nearestPond(c.snake.head);return edgePoint(o,c.snake.head,2)},0.8,{arrive:1.6,pres:'Drag',onStop:(c,how)=>{if(how==='failure')c.dragAttempts++}}),
+  constrict:coilRestOp('NestCoil',{r0:5,r1:1.3,turns:2.5,mul:0.6,hold:2,maxTime:30,pres:'Constrict'}),
+  swallow:mkOp('Swallow',{
+    start(c){c.snake.halt();c.snake.mouthTarget=1;c.snake.pres='Swallow'},
+    update(c){c.snake.halt();if(this.t>3)c.snake.mouthTarget=0;if(this.t<4)return C;
+      const p=c.carried;if(p){p.state='eaten';p.respawnAt=clock.t+(p.kind==='human'?60:80);c.lastMeal=p;c.world.event(`Swallowed ${p.name}. Digestion begins`)}
+      c.carried=null;c.drives.hunger=0;c.drives.digestion=1;c.strikes=0;c.dragAttempts=0;return S},
+    stop(c){c.snake.mouthTarget=c.carried?0.55:0}
+  }),
+  regurgitate:mkOp('Regurgitate',{
+    start(c){c.snake.halt();c.snake.mouthTarget=1;c.snake.pres='Regurgitate';
+      if(c.carried){const p=c.carried;c.carried=null;p.state='idle';p.immuneUntil=clock.t+4;p.startFlee(c.snake.head);c.world.event(`Dropped ${p.name} to escape`)}
+      else if(c.drives.digestion>0){c.drives.digestion=0;if(c.lastMeal&&c.lastMeal.state==='eaten')c.lastMeal.respawnAt=clock.t;c.world.event('Regurgitated the meal to regain mobility')}
+      c.drives.hunger=Math.max(c.drives.hunger,0.7);},
+    update(c){return this.t>=2?S:C},
+    stop(c){c.snake.mouthTarget=0}
+  }),
+  withdraw:moveOp('WithdrawToWater',c=>edgePoint(HOME,c.snake.head,6),0.8,{pres:'Withdraw'}),
+  ballUp:coilRestOp('BallUp',{r0:1.6,r1:0.7,turns:3,mul:0.5,hold:7,pres:'Balled'}),
+  targetThreat:mkOp('TargetThreat',{start(c){c.forcedTarget=c.world.nearestHuman(c.snake.head)},update:()=>S}),
+  flee:moveOp('Flee',c=>{const th=c.threatPoint||c.snake.head;const o=PONDS.reduce((b,o)=>(dist(o,c.snake.head)-0.5*dist(o,th))<(dist(b,c.snake.head)-0.5*dist(b,th))?o:b);return edgePoint(o,add(o,sub(o,th)),6)},0.8,{pres:'Flee'}),
+  hideSubmerged:coilRestOp('HideSubmerged',{r0:2,r1:1.1,turns:1,submerge:true,pres:'Submerged'}),
+  goToHomeWater:moveOp('GoToHomeWater',c=>edgePoint(HOME,c.snake.head,6),0.3),
+  goToBask:moveOp('GoToBaskPoint',c=>nearestPond(c.snake.head).bask,0.35,{arrive:2}),
+  bask:coilRestOp('Bask',{r0:2.4,r1:1.2,turns:1.5,pres:'Basking'}),
+  restInWater:coilRestOp('RestInWater',{r0:2.2,r1:1.2,turns:1,submerge:true,pres:'Resting',minDwell:5}),
+  submergeToCool:coilRestOp('SubmergeToCool',{r0:2.2,r1:1.2,turns:1,submerge:true,pres:'Cooling'}),
+  goToShade:moveOp('GoToShade',c=>{const t=nearestTree(c.snake.head);return add(t,mul(norm(sub(c.snake.head,t)),2.2))},0.4,{arrive:1.5}),
+  restInShade:coilRestOp('RestInShade',{r0:2,r1:1.2,turns:1,pres:'Shade'}),
+  goHome:moveOp('GoHome',c=>edgePoint(HOME,c.snake.head,-3),0.4,{tongue:true}),
+  chooseShorePoint:mkOp('ChooseShorePoint',{start(c){const near=PONDS.filter(o=>dist(o,HOME)<HOME_RANGE);const o=pick(near);const a=Math.random()*TAU;c.travelGoal={x:o.x+Math.cos(a)*(o.r+1.5),z:o.z+Math.sin(a)*(o.r+1.5)}},update:()=>S}),
+  travelShore:moveOp('TravelShore',c=>c.travelGoal,0.4,{tongue:true,pres:'Patrol'}),
+  goToCover:moveOp('GoToCover',c=>nearestGrass(c.snake.head),0.4,{arrive:3}),
+  restInCover:coilRestOp('RestInCover',{r0:2.2,r1:1.2,turns:1.25,pres:'Resting',minDwell:5}),
+  restAtTree:coilRestOp('RestAtTreeBase',{r0:2,r1:1.1,turns:1,pres:'Resting'}),
+  rushToPoint:moveOp('RushToPoint',c=>c.order&&c.order.point,0.8,{pres:'Director rush',arrive:3}),
+  campPoint:coilRestOp('CampPoint',{r0:2.5,r1:1.3,turns:1.25,pres:'Camping',onStop:(c,how)=>{if(how!=='success')c.brain.clearDirector('handed over')}}),
+};
+
+/* ============================================================
+   7. The anaconda domain (plan §6). Index order = priority.
+   ============================================================ */
+function stampIntent(node,intent){
+  if(node.type==='action')node.effects.push(eff('Intent',EffectType.Permanent,c=>c.setState(WS.Intent,intent,true)));
+  (node.children||[]).forEach(ch=>stampIntent(ch,intent));
+}
+function buildDomain(){
+  const visible=['visible',has(WS.TargetVisible,1)];
+  const Survive=SEL('Survive',[['threatened',has(WS.Stress,2)]],[
+    SEQ('RegurgitateAndWithdraw',[['laden',c=>c.getState(WS.Carrying)===1||c.getState(WS.Digesting)===2]],[
+      A('Regurgitate',{op:Ops.regurgitate,effects:[setWS('released',EffectType.PlanAndExecute,[[WS.Carrying,0],[WS.Digesting,0],[WS.Hunger,2]])]}),
+      A('WithdrawToWater',{exec:[['still wary',ge(WS.Stress,1)]],op:Ops.withdraw}),
+    ],'REAL'),
+    SEQ('Ball',[['small, hot or tired',c=>c.p.sizeClass==='small'||c.getState(WS.Thermal)===2||c.drives.fatigue>0.7]],[
+      A('BallUp',{exec:[['still wary',ge(WS.Stress,1)]],op:Ops.ballUp}),
+    ],'REAL'),
+    SEQ('StrikeBack',[['threat in strike range',c=>{const h=c.world.nearestHuman(c.snake.head);return !!h&&dist(h.pos,c.snake.head)<=c.p.strikeRange+1}],['bold',c=>c.p.boldness>=0.5]],[
+      A('TargetThreat',{op:Ops.targetThreat}),A('Telegraph',{op:Ops.telegraph}),A('Lunge',{op:Ops.lunge,effects:[setWS('captured',EffectType.PlanAndExecute,[[WS.Carrying,1]])]}),
+    ],'REAL'),
+    SEQ('FleeToWater',[],[
+      A('Flee',{exec:[['still wary',ge(WS.Stress,1)]],op:Ops.flee}),
+      A('HideSubmerged',{exec:[['still wary',ge(WS.Stress,1)]],op:Ops.hideSubmerged}),
+    ],'REAL'),
+  ],'REAL/ADAPTED');
+
+  const Feed=SEQ('Feed',[['carrying',has(WS.Carrying,1)]],[
+    SEL('ReachWater',[],[
+      A('AlreadyAtWater',{conds:[['at water',has(WS.AtWater,1)]],op:Ops.succeed}),
+      A('DragToWater',{conds:[['drag attempts < 2',c=>c.dragAttempts<2]],exec:[['still carrying',has(WS.Carrying,1)],['not threatened',lt(WS.Stress,2)]],op:Ops.drag,
+        effects:[setWS('at water',EffectType.PlanOnly,[[WS.AtWater,1]])]}),
+      A('SwallowOnTheSpot',{conds:[['drag failed twice',c=>c.dragAttempts>=2]],op:Ops.succeed}),
+    ]),
+    A('Constrict',{op:Ops.constrict}),
+    A('Swallow',{op:Ops.swallow,effects:[setWS('eaten',EffectType.PlanAndExecute,[[WS.Carrying,0],[WS.Digesting,2],[WS.Hunger,0]])]}),
+  ],'REAL');
+
+  const Hunt=SEL('Hunt',[['hungry',ge(WS.Hunger,2)],['not heavy with a meal',lt(WS.Digesting,2)],['not in a breeding ball',ne(WS.Breeding,3)],['not exhausted',c=>c.drives.fatigue<0.85]],[
+    SEQ('StrikeNow',[['strike window',has(WS.StrikeWindow,1)],visible,['mine or free',ne(WS.Claim,2)],['strikes < 3',c=>c.strikes<3]],[
+      A('Telegraph',{exec:[visible],op:Ops.telegraph}),
+      A('Lunge',{op:Ops.lunge,effects:[setWS('captured',EffectType.PlanAndExecute,[[WS.Carrying,1]])]}),
+    ],'REAL'),
+    SEQ('Pursue',[['struck already',c=>c.strikes>=1&&c.strikes<3],visible,['within 15 m',c=>c.target&&dist(c.target.prey.pos,c.snake.head)<=15]],[
+      A('Pursue',{exec:[visible],op:Ops.pursue}),PAUSE(),
+    ],'ADAPTED'),
+    SEQ('StalkSeen',[visible],[
+      SEL('Approach',[],[
+        SEQ('Sneak',[['prey not facing me',c=>!c.targetFacesMe()]],[A('Sneak',{exec:[['contact ≥ vibration',ge(WS.BestContact,2)]],op:Ops.sneak})],'REAL'),
+        SEQ('Creep',[],[A('Creep',{exec:[['contact ≥ vibration',ge(WS.BestContact,2)]],op:Ops.creep})],'REAL'),
+      ]),
+      PAUSE(),
+    ],'REAL'),
+    SEQ('Investigate',[['felt, not seen',c=>c.getState(WS.BestContact)===2&&c.getState(WS.TargetVisible)===0]],[
+      A('GoToInterest',{exec:[['still believe',c=>!!c.target&&c.target.confidence>0.1]],op:Ops.goToInterest}),
+      A('LookAround',{op:Ops.lookAround,effects:[eff('looked',EffectType.PlanAndExecute,c=>{if(!c.planning&&c.target)c.target.confidence*=0.5})]}),
+    ],'REAL'),
+    SEQ('AmbushCutOff',[['trail',has(WS.HasTrail,1)],['contact ≥ scent',ge(WS.BestContact,1)],['active hours',c=>c.getState(WS.TimeOfDay)!==2||c.p.boldByDay],['no recent failed cut-off',c=>clock.t>(c.cutCooldownUntil||0)]],[
+      A('CutAcross',{exec:[['trail',has(WS.HasTrail,1)]],op:Ops.cutAcross}),
+      PAUSE(),
+      A('HoldInPath',{exec:[['in path',has(WS.InPreyPath,1)],['patience',c=>c.brain.planner.elapsed()<c.p.patience]],op:Ops.holdInPath}),
+    ],'ADAPTED'),
+    SEQ('FollowTrail',[['trail',has(WS.HasTrail,1)],['scent only',has(WS.BestContact,1)]],[
+      A('WalkTrail',{exec:[['trail',has(WS.HasTrail,1)],['under 60 s',c=>c.brain.planner.elapsed()<60]],op:Ops.followTrail}),
+    ],'REAL'),
+    SEQ('AquaticLieInWait',[['not settled at a fresh site',c=>c.getState(WS.AtWater)===0||c.ambushStale()||!c.ambushPoint||dist(c.snake.head,c.ambushPoint)>4]],[
+      A('ChooseWaterSite',{op:Ops.chooseWaterSite,effects:[setWS('at water',EffectType.PlanOnly,[[WS.AtWater,1]])]}),
+      A('GoToSite',{exec:[['not threatened',lt(WS.Stress,2)]],op:Ops.goToSite}),
+      A('Submerge',{exec:[['nothing in sight',c=>c.getState(WS.BestContact)<=2]],op:Ops.submerge}),
+    ],'REAL'),
+  ],'REAL');
+
+  const Digest=SEL('Digest',[['digesting',ne(WS.Digesting,0)]],[
+    SEQ('SettleInWater',[['away from water',has(WS.AtWater,0)],['heavy',has(WS.Digesting,2)]],[
+      A('GoToHomeWater',{exec:[['not threatened',lt(WS.Stress,2)]],op:Ops.goToHomeWater,effects:[setWS('at water',EffectType.PlanOnly,[[WS.AtWater,1]])]}),
+    ],'REAL'),
+    SEQ('BaskWhileDigesting',[['dawn or day',c=>{const t=c.getState(WS.TimeOfDay);return t===1||t===2}],['not hot',ne(WS.Thermal,2)]],[
+      A('GoToBaskPoint',{op:Ops.goToBask}),
+      A('Bask',{exec:[['not hot',ne(WS.Thermal,2)],['calm',lt(WS.Stress,2)],['not night',ne(WS.TimeOfDay,0)]],op:Ops.bask}),
+    ],'REAL'),
+    SEQ('RestSubmerged',[],[A('RestInWater',{exec:[['calm',lt(WS.Stress,2)]],op:Ops.restInWater})],'REAL'),
+  ],'REAL');
+
+  const stub=n=>A(n,{op:Ops.idle});
+  const Breed=SEL('Breed',[['dry season',has(WS.Season,1)],['breeding state',ne(WS.Breeding,0)]],[
+    SEQ('FemaleReceptive',[['female',c=>c.p.sex==='female'],['receptive',has(WS.Breeding,1)]],[stub('LieInShallows')]),
+    SEQ('MaleTrack',[['male',c=>c.p.sex==='male'],['tracking',has(WS.Breeding,2)]],[stub('FollowPheromone')]),
+    SEQ('Aggregate',[['aggregated',has(WS.Breeding,3)]],[stub('Entwine')]),
+    SEQ('PostMating',[['post-mating',has(WS.Breeding,4)]],[stub('Disperse')]),
+  ],'ADAPTED · needs a 2nd snake');
+
+  const Thermo=SEL('Thermoregulate',[['too cold or hot',ne(WS.Thermal,0)],['not starving',lt(WS.Hunger,3)]],[
+    SEQ('WarmUp',[['cold',has(WS.Thermal,1)],['dawn or day',c=>{const t=c.getState(WS.TimeOfDay);return t===1||t===2}]],[
+      A('GoToBaskPoint',{op:Ops.goToBask}),A('Bask',{exec:[['cold',has(WS.Thermal,1)]],op:Ops.bask}),
+    ],'REAL'),
+    SEL('CoolDown',[['hot',has(WS.Thermal,2)]],[
+      A('SubmergeToCool',{conds:[['at water',has(WS.AtWater,1)]],exec:[['hot',has(WS.Thermal,2)]],op:Ops.submergeToCool}),
+      SEQ('Shade',[],[A('GoToShade',{op:Ops.goToShade}),A('RestInShade',{exec:[['hot',has(WS.Thermal,2)]],op:Ops.restInShade})]),
+    ],'REAL'),
+  ],'REAL');
+
+  const Ambient=SEL('Ambient',[],[
+    SEQ('ReturnHome',[['outside home range',has(WS.InHomeRange,1)]],[A('GoHome',{op:Ops.goHome})],'REAL'),
+    SEQ('NightPatrol',[['night',has(WS.TimeOfDay,0)],['peckish',ge(WS.Hunger,1)],['no contact',has(WS.BestContact,0)]],[
+      A('ChooseShorePoint',{op:Ops.chooseShorePoint}),
+      A('TravelShore',{exec:[['night',has(WS.TimeOfDay,0)],['no contact',has(WS.BestContact,0)]],op:Ops.travelShore}),
+    ],'REAL'),
+    SEL('DayLieUp',[['day',has(WS.TimeOfDay,2)],['contact ≤ scent',c=>c.getState(WS.BestContact)<=1]],[
+      A('RestSubmerged',{conds:[['at water',has(WS.AtWater,1)]],exec:[['contact ≤ scent',c=>c.getState(WS.BestContact)<=1]],op:Ops.restInWater}),
+      SEQ('RestInCover',[],[A('GoToCover',{op:Ops.goToCover}),A('RestInCover',{exec:[['contact ≤ scent',c=>c.getState(WS.BestContact)<=1]],op:Ops.restInCover})]),
+      A('RestInTree',{conds:[['climber',c=>c.p.climber]],op:Ops.restAtTree}),
+    ],'REAL'),
+    SEQ('RefugeDuringShed',[['shedding',has(WS.Shedding,1)]],[stub('HideInRefuge')],'flavour · off'),
+    SEQ('DrySeasonCluster',[['dry season',has(WS.Season,1)],['not hungry',lt(WS.Hunger,2)]],[stub('RestInCluster')],'REAL · no season here'),
+    A('Idle',{op:Ops.idle}),
+  ],'REAL');
+
+  stampIntent(Survive,INTENT.fleeing);stampIntent(Feed,INTENT.feeding);stampIntent(Hunt,INTENT.hunting);
+  stampIntent(Digest,INTENT.digesting);stampIntent(Breed,INTENT.breeding);stampIntent(Thermo,INTENT.idle);stampIntent(Ambient,INTENT.idle);
+  const idle=A('Idle',{op:Ops.idle});stampIntent(idle,INTENT.idle);
+  const root=SEL('Anaconda',[],[SLOT('director','Slot DIRECTOR'),Survive,Feed,Hunt,Digest,Breed,Thermo,Ambient,idle]);
+  return {root,slots:{}};
+}
+function directorRushDomain(){
+  const d=SEQ('DirectorRush',[['order: rush',has(WS.DirectorOrder,1)],['not carrying',has(WS.Carrying,0)],['not mid-lunge',c=>!c.lunging]],[
+    A('RushToPoint',{exec:[['order live',has(WS.DirectorOrder,1)]],op:Ops.rushToPoint}),
+    A('CampPoint',{exec:[['order live',has(WS.DirectorOrder,1)],['nothing seen',lt(WS.BestContact,3)]],op:Ops.campPoint,
+      effects:[eff('order done',EffectType.PlanAndExecute,c=>{if(!c.planning)c.brain.clearDirector('camp finished')})]}),
+  ],'INVENTED');
+  stampIntent(d,INTENT.hunting);return d;
+}
+
+/* ============================================================
+   8. Personalities (plan §11.4)
+   ============================================================ */
+const PERSONALITIES={
+  giant:{key:'giant',label:'Giant female',sex:'female',sizeClass:'giant',segs:80,spacing:0.45,size:1.15,speedMul:0.9,patience:120,boldness:0.35,strikeRange:5,boldByDay:false,climber:false,hungerRate:1,digestRate:1,color:0x4d5b29},
+  male:{key:'male',label:'Small male',sex:'male',sizeClass:'small',segs:50,spacing:0.38,size:0.72,speedMul:1.2,patience:45,boldness:0.8,strikeRange:3.6,boldByDay:true,climber:true,hungerRate:1.4,digestRate:1.5,color:0x5e6a2c},
+};
+
+/* ============================================================
+   9. Brain: sensors → drives → quantiser → planner (plan §3–5)
+   ============================================================ */
+const VISION_RANGE=20,VISION_HALF=100*Math.PI/180;
+class SnakeBrain{
+  constructor(world,p){
+    this.world=world;this.p=p;
+    this.body=new SnakeBody(p,edgePoint(HOME,{x:0,z:0},-4),0);
+    const c=this.ctx=new SnakeContext();
+    Object.assign(c,{brain:this,snake:this.body,world,p,beliefs:new Map(),target:null,strikes:0,dragAttempts:0,carried:null,forcedTarget:null,lunging:false,
+      ambushPoint:null,ambushPond:null,ambushChosenAt:-999,ambushStaleAt:Infinity,travelGoal:null,moveGoal:null,investigatePoint:null,order:null,threatPoint:null,lastMeal:null});
+    c.drives=this.drives={hunger:0.62,digestion:0,heat:0.5,fatigue:0,stress:0};
+    c.capture=prey=>{prey.state='caught';c.carried=prey;c.world.event(`Caught ${prey.name}`);c.forcedTarget=null};
+    c.ambushStale=()=>clock.t>c.ambushStaleAt||clock.t-c.ambushChosenAt>300;
+    c.targetFacesMe=()=>{const p=c.target&&c.target.prey;if(!p||p.kind==='noise')return false;return dot(hdir(p.h),norm(sub(c.snake.head,p.pos)))>0};
+    this.domain=buildDomain();this.planner=new Planner(this.domain);
+    this.rippleQueue=[];
+  }
+  clearDirector(why){
+    const c=this.ctx;delete this.domain.slots.director;c.order=null;c.setState(WS.DirectorOrder,0);this.world.event(`Director order cleared (${why})`);this.world.onSlotChange&&this.world.onSlotChange();
+  }
+  issueRush(point){
+    const c=this.ctx;delete this.domain.slots.director; // ClearSlot, then TrySetSlotDomain
+    this.domain.slots.director=directorRushDomain();
+    c.order={kind:'rush',point:{...point},issuedAt:clock.t,expiresAt:clock.t+60};
+    c.setState(WS.DirectorOrder,1);this.world.event('Director installed a RushTo order in the slot');this.world.onSlotChange&&this.world.onSlotChange();
+  }
+  sense(dt){
+    const c=this.ctx,now=clock.t,s=this.body,head=s.head,fwd=hdir(s.h);
+    for(const prey of this.world.prey){
+      if(!prey.active||prey.state==='caught'){c.beliefs.delete(prey);continue}
+      let b=c.beliefs.get(prey);
+      const fresh=!b;
+      if(!b)b={prey,lastKnown:{...prey.pos},positionError:20,confidence:0,travelDir:null,lastSight:-99,lastVib:-99,lastScent:-99,lastContact:now,feltT:-99,feltPos:null,feltErr:0,best:0};
+      let contact=false;const d=dist(head,prey.pos);
+      if(prey.kind!=='noise'&&d<=VISION_RANGE){
+        const ang=Math.acos(clamp(dot(fwd,norm(sub(prey.pos,head))),-1,1));
+        const hidden=prey.crouch&&inGrass(prey.pos);
+        if(ang<=VISION_HALF&&!hidden&&!losBlocked(head,prey.pos)){
+          b.confidence=1;b.positionError=0;b.lastKnown={...prey.pos};if(prey.speed>0.3)b.travelDir=norm(prey.vel);b.lastSight=now;contact=true;
+        }
+      }
+      const sp=prey.speed;
+      if(sp>=0.5){
+        const carry=sp<2?20:sp<4?50:100;
+        if(d<carry){
+          const strength=1-d/carry;
+          if(now-b.feltT>1){b.feltErr=0.15*d;b.feltPos=add(prey.pos,randInCircle(b.feltErr));b.feltT=now;this.rippleQueue.push({p:b.feltPos,r:Math.max(1.5,b.feltErr),s:strength})}
+          if(now-b.lastSight>2){b.lastKnown=b.feltPos;b.positionError=b.feltErr;if(prey.speed>0.3&&!b.travelDir)b.travelDir=norm(prey.vel)}
+          if(strength>b.confidence)b.confidence+=(strength-b.confidence)*Math.min(1,dt*3);
+          b.lastVib=now;contact=true;
+        }
+      }
+      if(prey.kind!=='noise'){
+        const marks=prey.liveMarks(now);let newest=null;
+        for(const m of marks)if(dist(m,head)<8&&(!newest||m.t>newest.t))newest=m;
+        if(newest){
+          const freshness=1-(now-newest.t)/SCENT_LIFE;b.confidence=Math.max(b.confidence,0.4*freshness);
+          const i=marks.indexOf(newest);if(i>=1)b.travelDir=norm(sub(newest,marks[Math.max(0,i-3)]));
+          if(now-b.lastSight>2&&now-b.lastVib>3){b.lastKnown={x:newest.x,z:newest.z};b.positionError=SCENT_SPACING}
+          b.lastScent=now;contact=true;
+        }
+      }
+      if(contact)b.lastContact=now;
+      if(now-b.lastSight>0.01)b.confidence-=dt*0.0075*(1+(now-b.lastContact)*4);
+      b.best=now-b.lastSight<2?3:now-b.lastVib<3?2:now-b.lastScent<6?1:0;
+      if(b.confidence<0.05){c.beliefs.delete(prey);continue}
+      if(fresh)c.beliefs.set(prey,b);
+    }
+    // target = argmax confidence × preference, with a 20% switching margin
+    const pref=p=>p.kind==='human'?1:p.kind==='capybara'?0.9:0.7;
+    let best=null,bs=0;for(const b of c.beliefs.values()){const sc=b.confidence*pref(b.prey);if(sc>bs){bs=sc;best=b}}
+    const cur=c.target&&c.beliefs.get(c.target.prey)===c.target?c.target:null;
+    let next=cur;
+    if(!cur)next=best;else if(best&&best!==cur&&bs>cur.confidence*pref(cur.prey)*1.2)next=best;
+    if(next!==c.target){
+      c.target=next;c.strikes=0;
+      if(next){c.dirty=true;c.dirtyField=-1;c.dirtyReason=`target → ${next.prey.name}`}
+    }
+  }
+  updateDrives(dt){
+    const d=this.drives,c=this.ctx,s=this.body,p=this.p;
+    if(d.digestion<0.5)d.hunger=Math.min(1,d.hunger+dt/480*p.hungerRate);
+    d.digestion=Math.max(0,d.digestion-dt/240*p.digestRate);
+    s.bulge=d.digestion;
+    const e=sunElev(clock.day);const ambient=0.15+0.7*Math.max(0,e);
+    let env=ambient;
+    if(s.submerge&&s.inWater())env=0.42;
+    else if(dist(nearestTree(s.head),s.head)<4)env=Math.min(ambient,0.5);
+    d.heat+=(env-d.heat)*dt/180;
+    if(s.pres==='Basking'&&e>0)d.heat+=0.01*dt;
+    d.heat=clamp(d.heat,0,1);
+    if(s.speed<0.5)d.fatigue=Math.max(0,d.fatigue-0.05*dt);
+    if(d.fatigue<0.2&&c.strikes>=3)c.strikes=0; // rested: may strike again
+    d.stress=Math.max(0,d.stress-dt/60);
+    let crowd=0;for(const h of this.world.prey)if(h.kind==='human'&&h.active&&h.state!=='caught'&&dist(h.pos,s.head)<6&&!(c.target&&c.target.prey===h&&c.ws[WS.Intent]===1))crowd++;
+    if(crowd>=2)d.stress=Math.min(1,d.stress+0.25*crowd*dt);
+    if(c.order&&clock.t>c.order.expiresAt)this.clearDirector('expired');
+  }
+  quantise(){
+    const c=this.ctx,d=this.drives,s=this.body,w=c.ws,b=c.target;
+    const hyst=(i,v,levels)=>{const cur=w[i];let n=0;levels.forEach(([en,ex],k)=>{const th=cur>=k+1?ex:en;if(v>=th)n=k+1});c.setState(i,n)};
+    c.setState(WS.BestContact,b?b.best:0);
+    c.setState(WS.TargetVisible,b&&clock.t-b.lastSight<2?1:0);
+    let sw=0;
+    if(b&&clock.t-b.lastSight<0.5&&b.prey.kind!=='noise'){
+      const dd=dist(b.prey.pos,s.head);const ang=Math.abs(wrapA(headingOf(sub(b.prey.pos,s.head))-s.h));
+      const was=w[WS.StrikeWindow]===1;
+      sw=(dd<=c.p.strikeRange+(was?1:0)&&ang<(was?45:35)*Math.PI/180)?1:0;
+    }
+    c.setState(WS.StrikeWindow,sw);
+    let trail=0;if(b&&b.prey.kind!=='noise'){let n=0;for(const m of b.prey.liveMarks(clock.t))if(dist(m,s.head)<40)n++;trail=n>=2?1:0}
+    c.setState(WS.HasTrail,trail);
+    let inPath=0;if(b&&b.travelDir){const v=sub(s.head,b.lastKnown);const dd=len(v);const al=dot(norm(v),b.travelDir);const was=w[WS.InPreyPath]===1;inPath=(was?al>0.85&&dd<34:al>0.9&&dd<30)?1:0}
+    c.setState(WS.InPreyPath,inPath);
+    c.setState(WS.Carrying,c.carried?1:0);
+    const wasW=w[WS.AtWater]===1;c.setState(WS.AtWater,pondAt(s.head,wasW?0.5:-0.5)?1:0);
+    c.setState(WS.AtRefuge,dist(s.head,HOME)<HOME.r+4?1:0);
+    c.setState(WS.InTree,0);
+    const hd=dist(s.head,HOME);c.setState(WS.InHomeRange,(w[WS.InHomeRange]===1?hd>HOME_RANGE-5:hd>HOME_RANGE)?1:0);
+    hyst(WS.Hunger,d.hunger,[[0.3,0.25],[0.6,0.5],[0.9,0.85]]);
+    c.setState(WS.Digesting,d.digestion>0.5?2:d.digestion>0.15?1:0);
+    c.setState(WS.Thermal,d.heat>=(w[WS.Thermal]===2?0.72:0.8)?2:d.heat<=(w[WS.Thermal]===1?0.38:0.3)?1:0);
+    hyst(WS.Stress,d.stress,[[0.35,0.3],[0.7,0.6]]);
+    c.setState(WS.TimeOfDay,todOf(clock.day));
+    c.setState(WS.Season,0);c.setState(WS.Breeding,0);c.setState(WS.Shedding,0);
+    c.setState(WS.Claim,b?1:0);
+  }
+  tick(dt){this.sense(dt);this.updateDrives(dt);this.quantise();this.planner.tick(this.ctx,dt);this.body.update(dt);
+    if(this.ctx.carried){const m=this.body.mouthPos();this.ctx.carried.pos={...m}}}
+}
+
+/* ============================================================
+   10. World container
+   ============================================================ */
+const HUMANS=[['Kaia','#e9724c'],['Mart','#f2c14e'],['Liis','#7ec4cf'],['Rasmus','#c792ea']];
+const world={
+  prey:[],snake:null,brain:null,events:[],
+  event(text){this.events.unshift({t:clock.t,text});if(this.events.length>40)this.events.pop();toast(text)},
+  hotspot(){let x=0,z=0,n=0;for(const p of this.prey){if(p.kind==='noise')continue;for(const m of p.liveMarks(clock.t))if(clock.t-m.t<120){x+=m.x;z+=m.z;n++}}return n?{x:x/n,z:z/n}:CAMP},
+  nearestHuman(p){let best=null,bd=1e9;for(const h of this.prey)if(h.kind==='human'&&h.active&&h.state!=='caught'){const d=dist(h.pos,p);if(d<bd){bd=d;best=h}}return best},
+  respawn(p){p.state='idle';p.timer=rand(2,5);p.marks=[];if(p.kind==='human'){p.pos=add(CAMP,randInCircle(4))}else{p.pos=edgePoint(p.homePond,add(p.homePond,randInCircle(10)),-4)}p.lastMark={...p.pos};this.event(`${p.name} is back on the island`)},
+  reset(persKey){
+    clock.t=0;this.prey=[];this.events=[];
+    HUMANS.forEach(([n,col],i)=>{this.prey.push(new Prey('human',n,col,add(CAMP,randInCircle(5))))});
+    for(let i=0;i<4;i++){const o=i<2?PONDS[0]:PONDS[3];const p=new Prey('capybara',`Capybara ${i+1}`,'#8a6a4a',edgePoint(o,add(o,randInCircle(10)),-4));p.homePond=o;this.prey.push(p)}
+    this.brain=new SnakeBrain(this,PERSONALITIES[persKey]);this.snake=this.brain.body;
+    this.event(`${PERSONALITIES[persKey].label} released at ${HOME.name}`);
+  },
+  step(dt){
+    clock.t+=dt;clock.day=(clock.day+dt/clock.dayLen)%1;
+    for(const p of this.prey)p.update(dt,this);
+    this.prey=this.prey.filter(p=>p.kind!=='noise'||p.active);
+    this.brain.tick(dt);
+  }
+};
+
+/* ============================================================
+   11. Rendering (three.js r128)
+   ============================================================ */
+const view=document.getElementById('view');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputEncoding=THREE.sRGBEncoding;
+view.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x0b1422,120,420);
+const camera=new THREE.PerspectiveCamera(50,1,0.5,1500);
+camera.position.set(-20,70,95);
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;controls.maxPolarAngle=Math.PI*0.48;controls.minDistance=8;controls.maxDistance=400;
+controls.target.set(HOME.x,0,HOME.z);
+
+const hemi=new THREE.HemisphereLight(0x9fc3d8,0x2b3a22,0.5);scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xfff1d6,1);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-70,right:70,top:70,bottom:-70,near:1,far:400});sun.shadow.bias=-0.0005;
+scene.add(sun);scene.add(sun.target);
+const moon=new THREE.DirectionalLight(0x8fa8d8,0.3);scene.add(moon);scene.add(moon.target);
+
+// sea, island ground with pond holes, beach rim
+const sea=new THREE.Mesh(new THREE.PlaneGeometry(3000,3000),new THREE.MeshPhongMaterial({color:0x1d4b5c,shininess:60}));
+sea.rotation.x=-Math.PI/2;sea.position.y=-0.6;scene.add(sea);
+const shape=new THREE.Shape();shape.absarc(0,0,ISLAND_R,0,TAU,false);
+PONDS.forEach(o=>{const h=new THREE.Path();h.absarc(o.x,-o.z,o.r,0,TAU,true);shape.holes.push(h)});
+const ground=new THREE.Mesh(new THREE.ShapeGeometry(shape,64),new THREE.MeshLambertMaterial({color:0x3f5f28}));
+ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+const rim=new THREE.Mesh(new THREE.CylinderGeometry(ISLAND_R,ISLAND_R+2,0.8,96,1,true),new THREE.MeshLambertMaterial({color:0xb8a679}));rim.position.y=-0.4;scene.add(rim);
+const beach=new THREE.Mesh(new THREE.RingGeometry(ISLAND_R-5,ISLAND_R,96),new THREE.MeshLambertMaterial({color:0xb8a679}));beach.rotation.x=-Math.PI/2;beach.position.y=0.02;scene.add(beach);
+const waterMat=new THREE.MeshPhongMaterial({color:0x2f6f73,transparent:true,opacity:0.7,shininess:90,depthWrite:false});
+PONDS.forEach(o=>{
+  const basin=new THREE.Mesh(new THREE.CircleGeometry(o.r,48),new THREE.MeshLambertMaterial({color:0x2a2b1c}));basin.rotation.x=-Math.PI/2;basin.position.set(o.x,-1.7,o.z);scene.add(basin);
+  const wall=new THREE.Mesh(new THREE.CylinderGeometry(o.r,o.r,1.7,48,1,true),new THREE.MeshLambertMaterial({color:0x3b3424,side:THREE.BackSide}));wall.position.set(o.x,-0.85,o.z);scene.add(wall);
+  const w=new THREE.Mesh(new THREE.CircleGeometry(o.r,48),waterMat);w.rotation.x=-Math.PI/2;w.position.set(o.x,-0.12,o.z);w.renderOrder=2;scene.add(w);
+});
+// trees
+{
+  const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.35,0.55,1,6),new THREE.MeshLambertMaterial({color:0x5a4330}),TREES.length);
+  const crown=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1,0),new THREE.MeshLambertMaterial({color:0x2f5a2c,flatShading:true}),TREES.length);
+  const m=new THREE.Matrix4(),q=new THREE.Quaternion(),v=new THREE.Vector3(),sc=new THREE.Vector3();
+  TREES.forEach((t,i)=>{m.compose(v.set(t.x,t.h/2,t.z),q,sc.set(1,t.h,1));trunk.setMatrixAt(i,m);m.compose(v.set(t.x,t.h,t.z),q,sc.set(t.crown,t.crown*1.1,t.crown));crown.setMatrixAt(i,m)});
+  trunk.castShadow=crown.castShadow=true;scene.add(trunk,crown);
+}
+// tall grass
+{
+  const blades=[];GRASS.forEach(g=>{for(let k=0;k<70;k++){const p=add(g,randInCircle(g.r));if(!pondAt(p,0.3))blades.push(p)}});
+  const im=new THREE.InstancedMesh(new THREE.ConeGeometry(0.18,1.7,4),new THREE.MeshLambertMaterial({color:0x8a9a46}),blades.length);
+  const m=new THREE.Matrix4(),q=new THREE.Quaternion(),v=new THREE.Vector3(),sc=new THREE.Vector3();
+  blades.forEach((p,i)=>{const h=0.7+Math.random()*0.7;q.setFromEuler(new THREE.Euler(rand(-0.2,0.2),Math.random()*TAU,rand(-0.2,0.2)));m.compose(v.set(p.x,0.8*h,p.z),q,sc.set(1,h,1));im.setMatrixAt(i,m)});
+  scene.add(im);
+}
+// camp and terminals
+{
+  const tent=new THREE.Mesh(new THREE.ConeGeometry(2.4,2.6,4),new THREE.MeshLambertMaterial({color:0xb4552f}));tent.position.set(CAMP.x+3,1.3,CAMP.z+2);tent.castShadow=true;scene.add(tent);
+  const fire=new THREE.PointLight(0xff9a4a,1.2,22);fire.position.set(CAMP.x,1.2,CAMP.z);scene.add(fire);
+  const fireM=new THREE.Mesh(new THREE.SphereGeometry(0.35,8,6),new THREE.MeshBasicMaterial({color:0xffa04a}));fireM.position.set(CAMP.x,0.3,CAMP.z);scene.add(fireM);
+  TERMINALS.forEach(t=>{const box=new THREE.Mesh(new THREE.BoxGeometry(0.8,1.6,0.6),new THREE.MeshLambertMaterial({color:0x3a4048}));box.position.set(t.x,0.8,t.z);box.castShadow=true;scene.add(box);
+    const scr=new THREE.Mesh(new THREE.PlaneGeometry(0.6,0.4),new THREE.MeshBasicMaterial({color:0x6cf0c8}));scr.position.set(t.x,1.2,t.z+0.31);scene.add(scr)});
+}
+
+// snake meshes
+let snakeMesh=null,headGroup=null,jaw=null,tongue=null,segY=[];
+function buildSnakeMesh(p){
+  if(snakeMesh){scene.remove(snakeMesh);scene.remove(headGroup)}
+  snakeMesh=new THREE.InstancedMesh(new THREE.SphereGeometry(1,14,10),new THREE.MeshStandardMaterial({roughness:0.55,metalness:0.05}),p.segs);
+  snakeMesh.castShadow=true;snakeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const base=new THREE.Color(p.color),spot=new THREE.Color(0x1a1a10),tan=new THREE.Color(0x7d7a3a);
+  for(let i=0;i<p.segs;i++){const col=i%4===2?spot:(i%7===0?tan:base);snakeMesh.setColorAt(i,col)}
+  snakeMesh.instanceColor.needsUpdate=true;scene.add(snakeMesh);
+  headGroup=new THREE.Group();const hm=new THREE.MeshStandardMaterial({color:p.color,roughness:0.5});
+  const skull=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),hm);skull.scale.set(1.15,0.42,0.72);skull.position.set(0.25,0.08,0);skull.castShadow=true;
+  jaw=new THREE.Group();const jm=new THREE.Mesh(new THREE.SphereGeometry(1,14,10),new THREE.MeshStandardMaterial({color:0xb7ad6a,roughness:0.6}));jm.scale.set(1.05,0.25,0.62);jm.position.set(0.8,-0.05,0);jaw.add(jm);jaw.position.set(-0.55,-0.1,0);
+  const eyeM=new THREE.MeshBasicMaterial({color:0xe8d36b});
+  [-1,1].forEach(sd=>{const e=new THREE.Mesh(new THREE.SphereGeometry(0.11,8,6),eyeM);e.position.set(0.55,0.4,0.32*sd);headGroup.add(e)});
+  tongue=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.04,0.08),new THREE.MeshBasicMaterial({color:0xd8344b}));tongue.position.set(1.6,0,0);
+  headGroup.add(skull,jaw,tongue);headGroup.scale.setScalar(0.62*p.size);scene.add(headGroup);
+  segY=new Array(p.segs).fill(0.5);
+}
+const preyMeshes=new Map();
+function preyMesh(p){
+  let g=preyMeshes.get(p);if(g)return g;
+  g=new THREE.Group();
+  if(p.kind==='human'){
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.36,1.3,10),new THREE.MeshLambertMaterial({color:p.color}));body.position.y=0.75;body.castShadow=true;
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.24,10,8),new THREE.MeshLambertMaterial({color:0xe2b48c}));head.position.y=1.6;head.castShadow=true;
+    const nose=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.08,0.08),new THREE.MeshLambertMaterial({color:0xe2b48c}));nose.position.set(0.25,1.6,0);
+    g.add(body,head,nose);
+  }else if(p.kind==='capybara'){
+    const body=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),new THREE.MeshLambertMaterial({color:0x7a5a3c}));body.scale.set(0.75,0.42,0.4);body.position.y=0.5;body.castShadow=true;
+    const head=new THREE.Mesh(new THREE.BoxGeometry(0.45,0.32,0.3),new THREE.MeshLambertMaterial({color:0x6b4e33}));head.position.set(0.75,0.65,0);
+    g.add(body,head);
+  }else{
+    const ring=new THREE.Mesh(new THREE.RingGeometry(0.8,1.2,32),new THREE.MeshBasicMaterial({color:0xc58be0,transparent:true,opacity:0.8,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.y=0.15;g.add(ring);g.userData.ring=ring;
+  }
+  scene.add(g);preyMeshes.set(p,g);return g;
+}
+
+// gizmos
+const giz=new THREE.Group();scene.add(giz);
+const gizMat=(col,op)=>new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:op,side:THREE.DoubleSide,depthWrite:false});
+const visionFan=new THREE.Mesh(new THREE.CircleGeometry(VISION_RANGE,40,-VISION_HALF,VISION_HALF*2),gizMat(0xe8d36b,0.08));visionFan.rotation.x=-Math.PI/2;
+const visionHolder=new THREE.Group();visionHolder.add(visionFan);giz.add(visionHolder);
+const beliefRing=new THREE.Mesh(new THREE.RingGeometry(0.93,1,48),gizMat(0xe2654c,0.75));beliefRing.rotation.x=-Math.PI/2;giz.add(beliefRing);
+const markerGeo=new THREE.ConeGeometry(0.5,1.6,4);
+const investigateMk=new THREE.Mesh(markerGeo,new THREE.MeshBasicMaterial({color:0xc58be0}));investigateMk.rotation.x=Math.PI;giz.add(investigateMk);
+const ambushMk=new THREE.Mesh(new THREE.RingGeometry(1.6,2,32),gizMat(0x55b3a8,0.9));ambushMk.rotation.x=-Math.PI/2;giz.add(ambushMk);
+const directorMk=new THREE.Mesh(new THREE.RingGeometry(2.5,3.2,4),gizMat(0xd6a23c,0.9));directorMk.rotation.x=-Math.PI/2;giz.add(directorMk);
+const homeRing=new THREE.Mesh(new THREE.RingGeometry(HOME_RANGE-0.5,HOME_RANGE,128),gizMat(0xd6a23c,0.25));homeRing.rotation.x=-Math.PI/2;homeRing.position.set(HOME.x,0.08,HOME.z);giz.add(homeRing);
+const goalLineGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]);
+const goalLine=new THREE.Line(goalLineGeo,new THREE.LineBasicMaterial({color:0xd6a23c,transparent:true,opacity:0.7}));giz.add(goalLine);
+const MAXMARKS=8*SCENT_RING;const markGeo=new THREE.BufferGeometry();
+markGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(MAXMARKS*3),3));markGeo.setAttribute('color',new THREE.BufferAttribute(new Float32Array(MAXMARKS*3),3));
+const markPts=new THREE.Points(markGeo,new THREE.PointsMaterial({size:0.7,vertexColors:true,transparent:true,opacity:0.85,depthWrite:false}));giz.add(markPts);
+const ripples=[];for(let i=0;i<14;i++){const r=new THREE.Mesh(new THREE.RingGeometry(0.9,1,40),gizMat(0xc58be0,0.6));r.rotation.x=-Math.PI/2;r.visible=false;r.userData={life:0};giz.add(r);ripples.push(r)}
+let rippleIdx=0;
+
+function sky(d){
+  const e=sunElev(d);const night=new THREE.Color(0x0b1422),day=new THREE.Color(0xa6c6d4),dusk=new THREE.Color(0xc98656);
+  const k=clamp((e+0.15)/0.5,0,1);const col=night.clone().lerp(day,k);col.lerp(dusk,Math.exp(-Math.pow(e/0.17,2))*0.55);return col;
+}
+const tmpM=new THREE.Matrix4(),tmpQ=new THREE.Quaternion(),tmpV=new THREE.Vector3(),tmpS=new THREE.Vector3();
+function render(){
+  const s=world.snake,p=s.p,brain=world.brain,c=brain.ctx;
+  // light
+  const e=sunElev(clock.day);const col=sky(clock.day);scene.background=col;scene.fog.color.copy(col);
+  const a=(clock.day-0.25)*TAU;const ft=controls.target;
+  sun.position.set(ft.x+Math.cos(a)*120,Math.sin(a)*150,ft.z+50);sun.target.position.copy(ft);sun.intensity=clamp(e*1.4,0,0.9);
+  moon.position.set(ft.x-Math.cos(a)*120,-Math.sin(a)*150,ft.z-40);moon.target.position.copy(ft);moon.intensity=clamp(-e*0.6,0,0.35);
+  hemi.intensity=0.28+0.3*Math.max(0,e);
+  // snake body
+  const segs=s.segments();const inW=pt=>!!pondAt(pt,-0.3);
+  for(let i=0;i<p.segs;i++){
+    const t=i/(p.segs-1);
+    let r=(t<0.08?lerp(0.55,0.75,t/0.08):t<0.45?0.75:lerp(0.75,0.12,(t-0.45)/0.55))*p.size;
+    if(s.bulge>0.02){const bi=lerp(0.12,0.7,1-s.bulge)*(p.segs-1);r*=1+0.65*Math.exp(-Math.pow((i-bi)/3,2))}
+    const q=segs[i];const water=inW(q);
+    const ty=water?(s.submerge?-0.95:-0.32):r*0.85;
+    segY[i]=lerp(segY[i],ty,0.12);
+    tmpM.compose(tmpV.set(q.x,segY[i],q.z),tmpQ.identity(),tmpS.set(r,r*0.9,r));snakeMesh.setMatrixAt(i,tmpM);
+  }
+  snakeMesh.instanceMatrix.needsUpdate=true;
+  const hw=inW(s.head);const hy=hw?(s.submerge?-0.25:-0.05):0.45*p.size;
+  const sweep=s.sweep?Math.sin(s.sweepT*1.3)*0.5:0;
+  headGroup.position.set(s.head.x,lerp(headGroup.position.y,hy,0.15),s.head.z);headGroup.rotation.set(0,-(s.h+sweep),0);
+  jaw.rotation.z=-s.mouth*0.75;
+  tongue.visible=s.tongue&&Math.sin(s.sweepT*9)>0.3;
+  // prey
+  const seen=new Set();
+  for(const pr of world.prey){
+    const g=preyMesh(pr);seen.add(pr);g.visible=pr.state!=='eaten';
+    g.position.set(pr.pos.x,pr.state==='caught'?0.6:0,pr.pos.z);g.rotation.y=-pr.h;
+    if(pr.kind==='human')g.scale.set(1,pr.crouch?0.6:1,1);
+    if(pr.state==='caught'){g.rotation.z=Math.PI/2*0.9;g.rotation.y=-s.h}else g.rotation.z=0;
+    if(pr.kind==='noise'){const k=(pr.expires-clock.t)/2.5;g.userData.ring.scale.setScalar(1+(1-k)*4);g.userData.ring.material.opacity=0.8*k}
+  }
+  for(const [pr,g] of preyMeshes)if(!seen.has(pr)){scene.remove(g);preyMeshes.delete(pr)}
+  // gizmos
+  giz.visible=ui.gizmos;
+  if(ui.gizmos){
+    visionHolder.position.set(s.head.x,0.1,s.head.z);visionHolder.rotation.y=-s.h;
+    const b=c.target;beliefRing.visible=!!b;
+    if(b){const r=Math.max(1,b.positionError);beliefRing.scale.setScalar(r);beliefRing.position.set(b.lastKnown.x,0.12,b.lastKnown.z);beliefRing.material.opacity=0.25+0.6*b.confidence}
+    investigateMk.visible=!!c.investigatePoint&&brain.planner.current&&brain.planner.current.name==='GoToInterest';
+    if(c.investigatePoint)investigateMk.position.set(c.investigatePoint.x,1.2,c.investigatePoint.z);
+    ambushMk.visible=!!c.ambushPoint;if(c.ambushPoint)ambushMk.position.set(c.ambushPoint.x,0.05,c.ambushPoint.z);
+    directorMk.visible=!!c.order;if(c.order)directorMk.position.set(c.order.point.x,0.1,c.order.point.z);
+    const g=c.moveGoal;goalLine.visible=!!g;
+    if(g){const pa=goalLineGeo.attributes.position;pa.setXYZ(0,s.head.x,0.3,s.head.z);pa.setXYZ(1,g.x,0.3,g.z);pa.needsUpdate=true}
+    const pos=markGeo.attributes.position,colA=markGeo.attributes.color;let n=0;const cc=new THREE.Color();
+    for(const pr of world.prey){if(pr.kind==='noise')continue;cc.set(pr.color);for(const m of pr.liveMarks(clock.t)){if(n>=MAXMARKS)break;const f=1-(clock.t-m.t)/SCENT_LIFE;pos.setXYZ(n,m.x,0.15,m.z);colA.setXYZ(n,cc.r*f,cc.g*f,cc.b*f);n++}}
+    markGeo.setDrawRange(0,n);pos.needsUpdate=true;colA.needsUpdate=true;
+    while(brain.rippleQueue.length){const q=brain.rippleQueue.shift();const r=ripples[rippleIdx++%ripples.length];r.visible=true;r.position.set(q.p.x,0.1,q.p.z);r.userData={life:1,r:q.r};}
+  }else brain.rippleQueue.length=0;
+  for(const r of ripples){if(!r.visible)continue;r.userData.life-=0.02;if(r.userData.life<=0){r.visible=false;continue}r.scale.setScalar(r.userData.r*(1.4-r.userData.life*0.4));r.material.opacity=0.6*r.userData.life}
+  renderer.render(scene,camera);
+}
+
+/* ============================================================
+   12. UI: controls, tools, brain monitor
+   ============================================================ */
+const ui={gizmos:true,follow:true,tool:'look'};
+const $=s=>document.querySelector(s);
+const toastBox=$('#toast');
+function toast(t){const d=document.createElement('div');d.textContent=t;toastBox.prepend(d);while(toastBox.children.length>4)toastBox.lastChild.remove();setTimeout(()=>d.remove(),6000)}
+$('#bPause').onclick=e=>{clock.paused=!clock.paused;e.target.textContent=clock.paused?'Play':'Pause';e.target.classList.toggle('on',clock.paused)};
+document.querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>{clock.scale=+b.dataset.speed;document.querySelectorAll('[data-speed]').forEach(x=>x.classList.toggle('on',x===b))});
+$('#bFollow').onclick=e=>{ui.follow=!ui.follow;e.target.classList.toggle('on',ui.follow)};
+$('#bGizmo').onclick=e=>{ui.gizmos=!ui.gizmos;e.target.classList.toggle('on',ui.gizmos)};
+const HINTS={look:'Drag to orbit, scroll to zoom.',stomp:'Click the ground to stomp. The snake feels it as a strong vibration with position error.',rush:'Click the ground. The Director fills the snake\'s slot with a RushTo order for that point.',poke:'Click near the snake to threaten it. Stress jumps to "threatened" and the Survive branch takes over.'};
+document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{ui.tool=b.dataset.tool;document.querySelectorAll('[data-tool]').forEach(x=>x.classList.toggle('on',x===b));$('#toolHint').textContent=HINTS[ui.tool]});
+document.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{clock.day=+b.dataset.day;world.event(`Time jumped to ${TOD_NAMES[todOf(clock.day)]}`)});
+$('#bHungry').onclick=()=>{const d=world.brain.drives;d.hunger=0.95;d.digestion=0;d.fatigue=0;world.event('Hunger set to starving')};
+$('#bReset').onclick=()=>restart();
+$('#pers').onchange=()=>restart();
+function restart(){world.reset($('#pers').value);buildSnakeMesh(world.snake.p);buildTree();for(const [,g] of preyMeshes)scene.remove(g);preyMeshes.clear()}
+world.onSlotChange=()=>buildTree();
+
+const ray=new THREE.Raycaster(),ndc=new THREE.Vector2(),plane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+let downAt=null;
+renderer.domElement.addEventListener('pointerdown',e=>{downAt={x:e.clientX,y:e.clientY}});
+renderer.domElement.addEventListener('pointerup',e=>{
+  if(!downAt||Math.hypot(e.clientX-downAt.x,e.clientY-downAt.y)>6||ui.tool==='look')return;
+  const r=renderer.domElement.getBoundingClientRect();ndc.set((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height)*2+1);
+  ray.setFromCamera(ndc,camera);const hit=new THREE.Vector3();if(!ray.ray.intersectPlane(plane,hit))return;
+  const p=clampIsland({x:hit.x,z:hit.z},4);
+  if(ui.tool==='stomp'){world.prey.push(new Noise(p));world.event('Stomp')}
+  else if(ui.tool==='rush'){world.brain.issueRush(p)}
+  else if(ui.tool==='poke'){const c=world.brain.ctx;c.threatPoint=p;world.brain.drives.stress=1;world.event('Snake threatened')}
+});
+
+// domain tree DOM
+const nodeEls=[];
+function buildTree(){
+  const root=world.brain.domain.root;const box=$('#tree');box.innerHTML='';nodeEls.length=0;
+  const walk=(n,depth)=>{
+    const el=document.createElement('div');el.className='n';el.style.paddingLeft=(depth*12)+'px';
+    const kind=n.type==='select'?'SEL':n.type==='sequence'?'SEQ':n.type==='slot'?'SLOT':n.type==='pause'?'':'ACT';
+    el.innerHTML=`<span class="k">${kind}</span> <span class="nm"></span>${n.tag?`<span class="tag">${n.tag}</span>`:''}`;
+    el.querySelector('.nm').textContent=n.type==='slot'?`${n.name} ${world.brain.domain.slots[n.id]?'(filled)':'(empty)'}`:n.name;
+    box.appendChild(el);nodeEls.push([n,el]);
+    if(n.type==='slot'&&world.brain.domain.slots[n.id])walk(world.brain.domain.slots[n.id],depth+1);
+    (n.children||[]).forEach(ch=>walk(ch,depth+1));
+  };
+  walk(root,0);
+}
+const fmt=n=>n.toFixed(2);
+const clockStr=()=>{const h=Math.floor(clock.day*24),m=Math.floor((clock.day*24-h)*60);return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} · ${TOD_NAMES[todOf(clock.day)]} · t ${Math.floor(clock.t)} s`};
+const esc=s=>String(s).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+function updatePanel(){
+  const brain=world.brain,c=brain.ctx,pl=brain.planner;
+  $('#clock').textContent=clockStr();
+  $('#persName').textContent=brain.p.label;
+  const intent=WS_LABELS.Intent[c.ws[WS.Intent]];const ie=$('#intent');ie.textContent=intent;ie.className='intent '+intent;
+  $('#task').textContent=pl.current?`${pl.current.name} · ${pl.elapsed().toFixed(1)} s`:'(planning)';
+  $('#mtr').innerHTML=c.mtrNames.length?c.mtrNames.map(n=>`<b>${esc(n)}</b>`).join(' › ')+`<br>MTR [${c.mtr.join(', ')}]`:'no plan';
+  $('#execConds').innerHTML=pl.current?(pl.current.exec.length?pl.current.exec.map(([l,fn])=>`<li class="cond"><span class="dot ${fn(c)?'ok':'bad'}"></span>exec: ${esc(l)}</li>`).join(''):'<li class="cond"><span class="dot"></span>no executing conditions (committed)</li>'):'';
+  const q=[];if(pl.current)q.push(`<li class="cur">▶ ${esc(pl.current.name)}</li>`);pl.queue.forEach(t=>q.push(`<li>${esc(t.name)}</li>`));pl.partial.forEach(p=>q.push(`<li>⏸ resume ${esc(p.task.name)} at step ${p.index}</li>`));
+  $('#queue').innerHTML=q.join('')||'<li>empty</li>';
+  $('#rejects').textContent=`${pl.rejected} rejected replans`;
+  const d=brain.drives;const dr=[['hunger',d.hunger,'#d6a23c'],['digestion',d.digestion,'#55b3a8'],['body heat',d.heat,'#e2654c'],['fatigue',d.fatigue,'#8b9b90'],['stress',d.stress,'#c58be0']];
+  $('#drives').innerHTML=dr.map(([n,v,col])=>`<span>${n}</span><span class="meter"><i style="width:${(v*100).toFixed(0)}%;background:${col}"></i></span><span class="num">${fmt(v)}</span>`).join('');
+  const rows=[];
+  for(const p of world.prey){if(p.kind==='noise')continue;const b=c.beliefs.get(p);const isT=c.target&&c.target.prey===p;
+    const st=p.state==='walk'?(p.crouch?'crouch-walk':p.goalSpeed>2?'jog':'walk'):p.state;
+    rows.push(`<span class="sw" style="background:${p.color}"></span><span class="${isT?'tgt':''}">${esc(p.name)}${isT?' ◀ target':''} <span class="st">${st}</span></span><span>${b?`${fmt(b.confidence)}${b.best?`<span class="chan c${b.best}">${['','scent','vib','sight'][b.best]}</span>`:''}`:'<span class="st">—</span>'}</span>`)}
+  $('#prey').innerHTML=rows.join('');
+  $('#ws').innerHTML=WS_NAMES.map((n,i)=>{const v=c.ws[i];const fl=c.lastChanged===i&&clock.t-c.lastChangedAt<3;return `<div class="${fl?'flash':''} ${v?'nz':''}"><span>${n}</span><span>${esc(WS_LABELS[n][v]??v)}</span></div>`}).join('');
+  $('#replans').innerHTML=c.replans.map(r=>`<div><span class="t">${r.t.toFixed(0)} s</span> <span class="why">${esc(r.reason)}</span><br>→ ${esc(r.to)}<br><span class="rej">plan: ${esc(r.plan)}</span></div>`).join('')||'<div>none yet</div>';
+  for(const [n,el] of nodeEls){
+    let valid=true;try{valid=n.conds?n.conds.every(([,fn])=>fn(c)):true}catch(e){valid=false}
+    el.classList.toggle('valid',valid);el.classList.toggle('active',c.active.has(n));el.classList.toggle('cur',pl.current===n);
+  }
+  if($('#decomp').closest('details').open)$('#decomp').innerHTML=c.decompLog.map(l=>`<span class="${l.res==='→ plan'?'okl':''}">${'  '.repeat(l.depth)}${esc(l.name)}  ${esc(l.res)}</span>`).join('\n');
+  $('#events').innerHTML=world.events.slice(0,20).map(ev=>`<div><span class="t">${ev.t.toFixed(0)} s</span> ${esc(ev.text)}</div>`).join('');
+}
+
+/* ============================================================
+   13. Main loop
+   ============================================================ */
+function resize(){const w=view.clientWidth,h=view.clientHeight;if(!w||!h)return;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
+new ResizeObserver(resize).observe(view);
+restart();resize();
+let last=performance.now(),panelT=0;
+function frame(now){
+  const realDt=Math.min(0.1,(now-last)/1000);last=now;
+  if(!clock.paused){
+    let g=realDt*clock.scale;const step=1/30;let n=0;
+    while(g>1e-6&&n<40){const dt=Math.min(step,g);world.step(dt);g-=dt;n++}
+  }
+  if(ui.follow){const h=world.snake.head;const tx=lerp(controls.target.x,h.x,0.06),tz=lerp(controls.target.z,h.z,0.06);
+    camera.position.x+=tx-controls.target.x;camera.position.z+=tz-controls.target.z;controls.target.set(tx,0,tz)}
+  controls.update();render();
+  panelT+=realDt;if(panelT>0.18){panelT=0;updatePanel()}
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+window.__sim={world,clock};
+})();
+</script>
