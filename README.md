@@ -10,15 +10,21 @@ Open `index.html` in a browser. It loads three.js r128 from jsDelivr, so it need
 
 - **3D view.** Drag to orbit and scroll to zoom. "Follow snake" keeps the camera on the head.
 - **The snake.** One continuous body with a flat belly, paired black dorsal ovals, black-ringed orange side spots and a yellow belly. It moves in travelling S-waves (larger when swimming), creeps almost straight with a ripple of muscle when stalking, and holds its head low. Submerged, only the eyes and nostrils break the surface; swimming, only the ridge of the back. Rings spread from the snout as it swims (forming a V-wake) and from the nostrils when it breathes. A kill is held limp on its side in the jaws, wrapped in loops (and held under, with bubbles, when the snake drowns it), then swallowed head-first; the meal shows as a bulge that moves down the body as it is digested.
+- **The island.** Gently rolling ground with worn paths from camp to the terminals and pools, muddy shores sloping down into the pool basins, reeds with cattails and lily pads at the margins, sand beaches into the sea, broadleaf trees, birches, spruces, shrubs and rocks. Grass and reeds sway in the wind. Pool water has moving ripples, gets darker and less clear with depth, and reflects the sky at grazing angles, so a submerged snake shows as a dim shape.
+- **Day and night.** A sky dome with a sun that turns orange near the horizon, stars and a moon at night, and fog that thickens at night. Nights are dark: moonlight and the flickering campfire are the main light.
+- **Prey.** People walk, jog and run (leaning forward) with swinging arms and bending knees, crouch-walk low, kneel to drink at the shore, work at the terminals, and look around (more often after they have seen the snake). Capybaras trot, graze with their heads down (looking up now and then), drink, and swim with only the head and back above water, leaving ripples. Newcomers fade in, and a swallowed animal fades out.
+- **Label and ring.** A label above the snake's head names the current task, its branch and a short reason (the place, or the target and the sense that found it). A ring under the head shows the intent colour (red hunting, gold feeding, teal digesting, purple fleeing).
 - **Gizmos:**
   - Yellow fan: the snake's vision wedge.
   - Red ring: its belief about where the target is. The ring's radius is the position error.
   - Purple rings: vibrations it felt, drawn where it *thinks* they came from.
   - Coloured dots: scent marks (5 m apart, fading over 240 s).
+  - Red dashed line: from the head to where the snake believes its target is.
+  - Pale outline on the water: where the submerged body lies.
   - Teal ring: the ambush site.
   - Orange line: the current move goal.
   - Large faint ring: the home range.
-- **Brain panel:**
+- **Brain panel** (the task header stays at the top while you scroll; on a phone the controls become one scrolling row and the view takes 60% of the height):
   - Current task and how long it has run.
   - Branch path and MTR.
   - Each executing condition of the current task, marked pass or fail.
