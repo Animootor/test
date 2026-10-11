@@ -9,6 +9,7 @@ Open `index.html` in a browser. It loads three.js r128 from jsDelivr, so it need
 ## What you see
 
 - **3D view.** Drag to orbit and scroll to zoom. "Follow snake" keeps the camera on the head.
+- **The snake.** One continuous body with a flat belly, paired black dorsal ovals, black-ringed orange side spots and a yellow belly. It moves in travelling S-waves (larger when swimming), creeps almost straight with a ripple of muscle when stalking, and holds its head low. Submerged, only the eyes and nostrils break the surface; swimming, only the ridge of the back. Rings spread from the snout as it swims (forming a V-wake) and from the nostrils when it breathes. A kill is held limp on its side in the jaws, wrapped in loops (and held under, with bubbles, when the snake drowns it), then swallowed head-first; the meal shows as a bulge that moves down the body as it is digested.
 - **Gizmos:**
   - Yellow fan: the snake's vision wedge.
   - Red ring: its belief about where the target is. The ring's radius is the position error.

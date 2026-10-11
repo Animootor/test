@@ -447,10 +447,13 @@ class SnakeBody{
     return out;
   }
 }
-function coilInit(c,r0,r1,turns){
+function coilInit(c,r0,r1,turns,tight,dry){
   const s=c.snake;let side=Math.random()<0.5?1:-1;
-  const o=pondAt(s.head,1); // in water: curl toward the middle of the pool so the coil stays wet
-  if(o){const l={x:-Math.sin(s.h),z:Math.cos(s.h)};side=dot(l,sub(o,s.head))>=0?1:-1}
+  // a coil of more than ~one turn is a flat spiral whose turns lie side by side: spacing >= one body width
+  if(!tight&&turns>0.8){const br=0.78*c.p.size;r1=Math.max(r1,1.3*br);r0=Math.max(r0,r1+2.15*br*turns)}
+  const o=pondAt(s.head,1),l={x:-Math.sin(s.h),z:Math.cos(s.h)};
+  if(dry){const e=sd=>Math.abs(edgeDist(add(s.head,mul(l,r0*sd))));side=e(1)<=e(-1)?1:-1} // basking: coil straddles the water's edge
+  else if(o)side=dot(l,sub(o,s.head))>=0?1:-1; // in water: curl toward the middle of the pool so the coil stays wet
   const left={x:-Math.sin(s.h)*side,z:Math.cos(s.h)*side};
   const center=add(s.head,mul(left,r0));const v=sub(s.head,center);const f=hdir(s.h);
   const rot=Math.sign(v.x*f.z-v.z*f.x)||1;
@@ -662,11 +665,11 @@ function coilRestOp(name,o={}){return mkOp(name,{
     this.minDwell=fnOr(o.minDwell,c)||0;this.max=fnOr(o.maxTime,c);this.doneAt=null;c.snake.submerge=!!o.submerge;c.snake.pres=fnOr(o.pres,c)||'Coiled';
     // wet rests first swim out and along the pool so the whole body lies in water, never on the bank
     this.wade=o.wet?settleRoute(c,o.wet==='site'?c.ambushPond:null,o.wet==='site'?c.ambushPoint:null):null;this.wi=0;
-    if(!this.wade)this.coil=coilInit(c,o.r0||3,o.r1||1.4,o.turns||1.25);
+    if(!this.wade)this.coil=coilInit(c,o.r0||3,o.r1||1.4,o.turns||1.25,o.tight,o.dry);
   },
   update(c,dt){
     if(this.wade){const w=this.wade[this.wi];c.snake.steerTo(w,0.4);c.moveGoal=w;
-      if(dist(c.snake.head,w)<1.6&&++this.wi>=this.wade.length||this.t>60){this.wade=null;c.moveGoal=null;this.coil=coilInit(c,o.r0||3,o.r1||1.4,o.turns||1.25)}return C}
+      if(dist(c.snake.head,w)<1.6&&++this.wi>=this.wade.length||this.t>60){this.wade=null;c.moveGoal=null;this.coil=coilInit(c,o.r0||3,o.r1||1.4,o.turns||1.25,o.tight,o.dry)}return C}
     if(!this.coil.done)coilStep(c,this.coil,o.mul||0.45);
     else{c.snake.halt();c.snake.sweep=!o.onIdle;if(o.onIdle)o.onIdle(c);if(this.doneAt===null)this.doneAt=this.t}
     if(o.hold!==undefined&&this.doneAt!==null&&this.t-this.doneAt>=o.hold)return S;
@@ -776,7 +779,7 @@ const Ops={
   }),
   // kills are dragged well into the pool (≥ coil radius + 1 m inside the edge) so the coils stay wet and the prey drowns
   drag:moveOp('Drag',c=>{const o=nearestPond(c.snake.head);return edgePoint(o,c.snake.head,Math.min(o.r*0.45,DRAG_DEPTH))},0.8,{arrive:1.2,pres:'Drag',onStop:(c,how)=>{if(how==='failure')c.dragAttempts++}}),
-  constrict:coilRestOp('NestCoil',{r0:2.6,r1:1.2,turns:2.5,mul:0.6,hold:2,maxTime:30,minDwell:40,pres:c=>c.snake.inWater()?'Drowning':'Constrict',
+  constrict:coilRestOp('NestCoil',{r0:2.6,r1:1.2,turns:1.6,mul:0.6,hold:2,maxTime:30,minDwell:40,pres:c=>c.snake.inWater()?'Drowning':'Constrict',
     onStart(c){const o=pondAt(c.snake.head,-0.5);if(o&&c.carried)c.world.event(`Holding ${c.carried.name} under in ${o.name}`)},onStop(c,how){if(how==='success'&&c.carried)c.carried.limp=true}}),
   swallow:mkOp('Swallow',{minDwell:10,
     start(c){c.snake.halt();c.snake.mouthTarget=1;c.snake.pres='Swallow'},
@@ -795,13 +798,13 @@ const Ops={
     stop(c){c.snake.mouthTarget=0}
   }),
   withdraw:moveOp('WithdrawToWater',c=>edgePoint(HOME,c.snake.head,6),0.8,{pres:'Withdraw'}),
-  ballUp:coilRestOp('BallUp',{r0:1.6,r1:0.7,turns:3,mul:0.5,hold:7,pres:'Balled'}),
+  ballUp:coilRestOp('BallUp',{tight:true,r0:1.6,r1:0.7,turns:3,mul:0.5,hold:7,pres:'Balled'}),
   targetThreat:mkOp('TargetThreat',{start(c){c.forcedTarget=c.world.nearestHuman(c.snake.head)},update:()=>S}),
   flee:moveOp('Flee',c=>{const th=c.threatPoint||c.snake.head;const o=PONDS.reduce((b,o)=>(dist(o,c.snake.head)-0.5*dist(o,th))<(dist(b,c.snake.head)-0.5*dist(b,th))?o:b);return edgePoint(o,add(o,sub(o,th)),6)},0.8,{pres:'Flee'}),
   hideSubmerged:coilRestOp('HideSubmerged',{r0:2,r1:1.1,turns:1,submerge:true,wet:true,pres:'Submerged'}),
   goToWater:moveOp('GoToWater',c=>edgePoint(nearestPond(c.snake.head),c.snake.head,3),0.3,{arrive:1.5}),
   goToBask:moveOp('GoToBaskPoint',c=>nearestPond(c.snake.head).bask,0.35,{arrive:2}),
-  bask:coilRestOp('Bask',{r0:2.4,r1:1.2,turns:1.5,pres:'Basking',minDwell:10}),
+  bask:coilRestOp('Bask',{dry:true,r0:2.4,r1:1.2,turns:1.5,pres:'Basking',minDwell:10}),
   restInWater:coilRestOp('RestInWater',{r0:2.2,r1:1.2,turns:1,submerge:true,wet:true,pres:'Resting',minDwell:15}),
   submergeToCool:coilRestOp('SubmergeToCool',{r0:2.2,r1:1.2,turns:1,submerge:true,wet:true,pres:'Cooling',minDwell:10}),
   goToShade:moveOp('GoToShade',c=>{const t=nearestTree(c.snake.head);return add(t,mul(norm(sub(c.snake.head,t)),2.2))},0.4,{arrive:1.5}),
@@ -1190,6 +1193,14 @@ Object.assign(sun.shadow.camera,{left:-70,right:70,top:70,bottom:-70,near:1,far:
 scene.add(sun);scene.add(sun.target);
 const moon=new THREE.DirectionalLight(0x8fa8d8,0.3);scene.add(moon);scene.add(moon.target);
 
+// shared height helpers (the snake renderer uses them; a terrain heightfield should keep groundY() in sync with its mesh)
+const WATER_Y=-0.12,POND_DEPTH=3.4;
+const sstep=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t)};
+const ease=(k,dt)=>1-Math.exp(-k*dt); // frame-rate independent smoothing factor
+const lin=hex=>new THREE.Color(hex).convertSRGBToLinear();
+const _gp={x:0,z:0};
+function edgeAt(x,z){_gp.x=x;_gp.z=z;return edgeDist(_gp)}
+function groundY(x,z){const e=edgeAt(x,z);return e>=0?0:-0.3-(POND_DEPTH-0.3)*sstep(0,2.4,-e)} // pools: a steep bank down to the floor
 // sea, island ground with pond holes, beach rim
 const sea=new THREE.Mesh(new THREE.PlaneGeometry(3000,3000),new THREE.MeshPhongMaterial({color:0x1d4b5c,shininess:60}));
 sea.rotation.x=-Math.PI/2;sea.position.y=-0.6;scene.add(sea);
@@ -1201,14 +1212,14 @@ const rim=new THREE.Mesh(new THREE.CylinderGeometry(ISLAND_R,ISLAND_R+2,0.8,96,1
 const beach=new THREE.Mesh(new THREE.RingGeometry(ISLAND_R-5,ISLAND_R,96),new THREE.MeshLambertMaterial({color:0xb8a679}));beach.rotation.x=-Math.PI/2;beach.position.y=0.02;scene.add(beach);
 const waterMat=new THREE.MeshPhongMaterial({color:0x2f6f73,transparent:true,opacity:0.7,shininess:90,depthWrite:false});
 PONDS.forEach(o=>{
-  const basin=new THREE.Mesh(new THREE.CircleGeometry(o.r,48),new THREE.MeshLambertMaterial({color:0x2a2b1c}));basin.rotation.x=-Math.PI/2;basin.position.set(o.x,-1.7,o.z);scene.add(basin);
-  const wall=new THREE.Mesh(new THREE.CylinderGeometry(o.r,o.r,1.7,48,1,true),new THREE.MeshLambertMaterial({color:0x3b3424,side:THREE.BackSide}));wall.position.set(o.x,-0.85,o.z);scene.add(wall);
-  const w=new THREE.Mesh(new THREE.CircleGeometry(o.r,48),waterMat);w.rotation.x=-Math.PI/2;w.position.set(o.x,-0.12,o.z);w.renderOrder=2;scene.add(w);
+  const basin=new THREE.Mesh(new THREE.CircleGeometry(o.r,48),new THREE.MeshLambertMaterial({color:0x2a2b1c}));basin.rotation.x=-Math.PI/2;basin.position.set(o.x,-POND_DEPTH,o.z);scene.add(basin);
+  const wall=new THREE.Mesh(new THREE.CylinderGeometry(o.r,o.r,POND_DEPTH,48,1,true),new THREE.MeshLambertMaterial({color:0x3b3424,side:THREE.BackSide}));wall.position.set(o.x,-POND_DEPTH/2,o.z);scene.add(wall);
+  const w=new THREE.Mesh(new THREE.CircleGeometry(o.r,48),waterMat);w.rotation.x=-Math.PI/2;w.position.set(o.x,WATER_Y,o.z);w.renderOrder=2;scene.add(w);
 });
 // trees
 {
   const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.35,0.55,1,6),new THREE.MeshLambertMaterial({color:0x5a4330}),TREES.length);
-  const crown=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1,0),new THREE.MeshLambertMaterial({color:0x2f5a2c,flatShading:true}),TREES.length);
+  const crown=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1,0),new THREE.MeshPhongMaterial({color:0x2f5a2c,flatShading:true,shininess:0}),TREES.length);
   const m=new THREE.Matrix4(),q=new THREE.Quaternion(),v=new THREE.Vector3(),sc=new THREE.Vector3();
   TREES.forEach((t,i)=>{m.compose(v.set(t.x,t.h/2,t.z),q,sc.set(1,t.h,1));trunk.setMatrixAt(i,m);m.compose(v.set(t.x,t.h,t.z),q,sc.set(t.crown,t.crown*1.1,t.crown));crown.setMatrixAt(i,m)});
   trunk.castShadow=crown.castShadow=true;scene.add(trunk,crown);
@@ -1230,23 +1241,291 @@ PONDS.forEach(o=>{
     const scr=new THREE.Mesh(new THREE.PlaneGeometry(0.6,0.4),new THREE.MeshBasicMaterial({color:0x6cf0c8}));scr.position.set(t.x,1.2,t.z+0.31);scene.add(scr)});
 }
 
-// snake meshes
-let snakeMesh=null,headGroup=null,jaw=null,tongue=null,segY=[];
+/* ---------- Snake rendering (presentation only; reads the simulation, never steers it) ----------
+   One dynamic tube BufferGeometry rebuilt every frame from the spine (N rings x 16, elliptical section with a flat belly,
+   tapering to a pointed tail, anaconda pattern in vertex colours), a sculpted head with a hinged jaw, eyes and nostrils
+   on top, a post-ocular stripe and a forked tongue. Render-time travelling-wave undulation, water posture, stacking where
+   the body crosses itself, constriction loops around the prey, swallowing + digestion bulge, ripples / wake / bubbles. */
+const snakeMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.46,metalness:0});
+const COL={dors:lin(0x4b5824),side:lin(0x6f7230),belly:lin(0xcdb65a),black:lin(0x15130b),core:lin(0xd8962a),cream:lin(0xc6ae58),pink:lin(0x9a4a48),stripeO:lin(0xcf8a2c),crown:lin(0x434f1f)};
+const hash=x=>{const v=Math.sin(x)*43758.5453;return v-Math.floor(v)};
+const wrapPi=a=>{a=(a+Math.PI)%TAU;if(a<0)a+=TAU;return a-Math.PI};
+function bodyColour(pat,s,th,L,out){ // th: 0 right flank, π/2 spine, π left flank, 3π/2 belly
+  const sn=Math.sin(th);
+  if(sn>=0)out.copy(COL.side).lerp(COL.dors,Math.pow(sn,0.6));else out.copy(COL.side).lerp(COL.belly,sstep(0.1,0.5,-sn));
+  let ink=0,core=0;
+  for(const d of pat.dors){const u=(s-d.s)/d.ls;if(u>1||u<-1)continue;const v=wrapPi(th-d.th)/d.lt,q=u*u+v*v;if(q<1)ink=Math.max(ink,sstep(1,0.7,q))}
+  for(const o of pat.lat){const u=(s-o.s)/o.ls;if(u>1||u<-1)continue;const v=wrapPi(th-o.th)/o.rad,q=Math.sqrt(u*u+v*v);if(q<1){ink=Math.max(ink,sstep(1,0.82,q));core=Math.max(core,sstep(0.56,0.4,q))}}
+  for(const b of pat.bel){const u=(s-b.s)/b.ls;if(u>1||u<-1)continue;const v=wrapPi(th-b.th)/b.rad,q=u*u+v*v;if(q<1)ink=Math.max(ink,sstep(1,0.6,q))}
+  out.multiplyScalar(0.9+0.2*hash(s*13.17+th*7.31));
+  if(ink>0)out.lerp(COL.black,ink);if(core>0)out.lerp(COL.core,core);
+  if(s>0.85*L)out.multiplyScalar(lerp(1,0.78,(s-0.85*L)/(0.15*L)));
+}
+function loft(nu,nt,posFn,colFn){ // a closed-around, open-ended surface of revolution-like patch; faces point outward
+  const nv=(nu+1)*nt,pos=new Float32Array(nv*3),col=new Float32Array(nv*3),idx=[],o=[0,0,0],c=new THREE.Color();
+  for(let i=0;i<=nu;i++)for(let j=0;j<nt;j++){const u=i/nu,th=j/nt*TAU;posFn(u,th,o);const k=(i*nt+j)*3;pos[k]=o[0];pos[k+1]=o[1];pos[k+2]=o[2];colFn(u,th,o,c);col[k]=c.r;col[k+1]=c.g;col[k+2]=c.b}
+  for(let i=0;i<nu;i++)for(let j=0;j<nt;j++){const a=i*nt+j,b=i*nt+(j+1)%nt;idx.push(a,a+nt,b,b,a+nt,b+nt)}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('color',new THREE.BufferAttribute(col,3));g.setIndex(idx);g.computeVertexNormals();return g;
+}
+let SR=null; // snake render state
 function buildSnakeMesh(p){
-  if(snakeMesh){scene.remove(snakeMesh);scene.remove(headGroup)}
-  snakeMesh=new THREE.InstancedMesh(new THREE.SphereGeometry(1,14,10),new THREE.MeshStandardMaterial({roughness:0.55,metalness:0.05}),p.segs);
-  snakeMesh.castShadow=true;snakeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  const base=new THREE.Color(p.color),spot=new THREE.Color(0x1a1a10),tan=new THREE.Color(0x7d7a3a);
-  for(let i=0;i<p.segs;i++){const col=i%4===2?spot:(i%7===0?tan:base);snakeMesh.setColorAt(i,col)}
-  snakeMesh.instanceColor.needsUpdate=true;scene.add(snakeMesh);
-  headGroup=new THREE.Group();const hm=new THREE.MeshStandardMaterial({color:p.color,roughness:0.5});
-  const skull=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),hm);skull.scale.set(1.15,0.42,0.72);skull.position.set(0.25,0.08,0);skull.castShadow=true;
-  jaw=new THREE.Group();const jm=new THREE.Mesh(new THREE.SphereGeometry(1,14,10),new THREE.MeshStandardMaterial({color:0xb7ad6a,roughness:0.6}));jm.scale.set(1.05,0.25,0.62);jm.position.set(0.8,-0.05,0);jaw.add(jm);jaw.position.set(-0.55,-0.1,0);
-  const eyeM=new THREE.MeshBasicMaterial({color:0xe8d36b});
-  [-1,1].forEach(sd=>{const e=new THREE.Mesh(new THREE.SphereGeometry(0.11,8,6),eyeM);e.position.set(0.55,0.4,0.32*sd);headGroup.add(e)});
-  tongue=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.04,0.08),new THREE.MeshBasicMaterial({color:0xd8344b}));tongue.position.set(1.6,0,0);
-  headGroup.add(skull,jaw,tongue);headGroup.scale.setScalar(0.62*p.size);scene.add(headGroup);
-  segY=new Array(p.segs).fill(0.5);
+  if(SR){scene.remove(SR.mesh);scene.remove(SR.head);SR.mesh.geometry.dispose();SR.head.traverse(o=>{if(o.geometry)o.geometry.dispose()})}
+  const L=(p.segs-1)*p.spacing,N=p.sizeClass==='giant'?180:130,M=16,ds=L/(N-1);
+  const rm=0.78*p.size,rn=0.6*rm,hw=1.2*rn,hl=3.3*hw,xt=p.size,xb=xt-hl,hb=-xb; // head ~1.2x neck width; snout tip just past the sim mouth point
+  const profAt=s=>{if(s<hb)return 0.55*rm;let f=0.6+0.4*sstep(hb,0.38*L,s);const t=s/L;if(t>0.7)f*=0.03+0.97*Math.pow(1-(t-0.7)/0.3,0.85);return f*rm};
+  const prof=new Float32Array(N);for(let i=0;i<N;i++)prof[i]=profAt(i*ds);prof[N-1]=0;prof[N-2]*=0.5; // closed, pointed tail
+  // pattern: paired black dorsal ovals, lateral ocelli (black rings with orange-yellow centres), black blotches on a yellow belly
+  const rnd=mulberry32(p.sizeClass==='giant'?5:9),dsp=1.15*rm,pat={dors:[],lat:[],bel:[]};
+  for(let s=hb+0.5*rm;s<L*0.985;s+=dsp*(0.8+0.4*rnd()))for(const sd of[-1,1]){if(rnd()<0.07)continue;pat.dors.push({s:s+sd*dsp*0.25*rnd(),th:Math.PI/2+sd*(0.36+0.08*rnd()),ls:dsp*(0.3+0.12*rnd()),lt:0.19+0.07*rnd()})}
+  for(let s=hb+0.8*rm;s<L*0.97;s+=dsp*(1.05+0.4*rnd()))for(const sd of[-1,1]){const rad=0.22+0.07*rnd();pat.lat.push({s:s+dsp*0.45*rnd(),th:sd>0?0.06+0.14*rnd():Math.PI-0.06-0.14*rnd(),rad,ls:rad*profAt(s)*1.15})}
+  for(let s=hb;s<L*0.95;s+=dsp*0.35*(0.5+rnd()))if(rnd()<0.55){const rad=0.07+0.08*rnd();pat.bel.push({s,th:Math.PI*1.5+(rnd()-0.5)*1.5,rad,ls:rad*profAt(s)*1.4})}
+  const pos=new Float32Array(N*M*3),col=new Float32Array(N*M*3),idx=[],cc=new THREE.Color();
+  for(let i=0;i<N;i++)for(let j=0;j<M;j++){bodyColour(pat,i*ds,j/M*TAU,L,cc);const k=(i*M+j)*3;col[k]=cc.r;col[k+1]=cc.g;col[k+2]=cc.b}
+  for(let i=0;i<N-1;i++)for(let j=0;j<M;j++){const a=i*M+j,b=i*M+(j+1)%M;idx.push(a,b,a+M,b,b+M,a+M)}
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('normal',new THREE.BufferAttribute(new Float32Array(N*M*3),3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('color',new THREE.BufferAttribute(col,3));geo.setIndex(idx);
+  const mesh=new THREE.Mesh(geo,snakeMat);mesh.castShadow=mesh.receiveShadow=true;mesh.frustumCulled=false;scene.add(mesh);
+  const csj=new Float32Array(M),ycj=new Float32Array(M);
+  for(let j=0;j<M;j++){const th=j/M*TAU,sn=Math.sin(th);csj[j]=Math.cos(th);ycj[j]=sn>=0?0.86*Math.pow(sn,0.85):-0.7*Math.pow(-sn,0.55)} // flatter belly
+  // ---- head: wedge snout, eyes + nostrils on top, hinged jaw, forked tongue
+  const head=new THREE.Group();head.rotation.order='YZX';
+  const tipK=u=>u>0.86?Math.max(0,1-((u-0.86)/0.14)**2):1;
+  const wS=u=>(u<0.3?lerp(rn,hw,sstep(0,0.3,u)):lerp(hw,0.5*hw,clamp((u-0.3)/0.56,0,1)))*Math.sqrt(tipK(u));
+  const tS=u=>(u<0.3?lerp(0.74,0.68,u/0.3):lerp(0.68,0.46,clamp((u-0.3)/0.56,0,1)))*hw*Math.pow(tipK(u),0.3);
+  const ue=0.6;
+  const skull=new THREE.Mesh(loft(28,20,(u,th,o)=>{const w=wS(u),t=tS(u),sn=Math.sin(th);o[0]=xb+u*hl;o[2]=w*Math.cos(th);o[1]=sn>=0?t*Math.pow(sn,0.7):-0.02*w*(-sn)},
+    (u,th,o,c)=>{const sn=Math.sin(th);
+      if(sn<0){c.copy(-sn>0.6?COL.pink:COL.cream);return}
+      const tm=th<=Math.PI/2?th:Math.PI-th; // 0 at the lip, π/2 on the crown
+      c.copy(COL.cream).lerp(COL.dors,sstep(0.08,0.4,tm));if(tm>1.1)c.lerp(COL.crown,0.5);
+      if(u>0.03&&u<ue+0.03){const tc=0.2+0.42*(u/ue),d=tm-tc;if(Math.abs(d)<0.11)c.copy(COL.black);else if(d>=0.11&&d<0.23)c.copy(COL.stripeO)} // post-ocular stripe
+      if(tm>0.9&&hash(u*57.3+th*3.1)>0.9)c.lerp(COL.black,0.7);
+      c.multiplyScalar(0.92+0.16*hash(u*31+th*17))}),snakeMat);
+  skull.castShadow=true;
+  const xh=xb+0.1*hl;
+  const jaw=new THREE.Mesh(loft(22,16,(u,th,o)=>{const x=xb+0.04*hl+u*0.96*hl,us=(x-xb)/hl,w=0.96*wS(us),sn=Math.sin(th),d=lerp(0.5,0.26,u)*hw*Math.pow(tipK(us),0.5);
+      o[0]=x-xh;o[2]=w*Math.cos(th);o[1]=sn>=0?-0.015*hw+0.008*hw*sn:-0.015*hw-d*Math.pow(-sn,0.7)},
+    (u,th,o,c)=>{const sn=Math.sin(th);if(sn>0.8)c.copy(COL.pink);else{c.copy(COL.cream).multiplyScalar(0.92+0.16*hash(u*41+th*9));if(hash(u*91.7+th*13.3)>0.93)c.copy(COL.black)}}),snakeMat);
+  jaw.castShadow=true;const jawPivot=new THREE.Group();jawPivot.position.set(xh,0,0);jawPivot.add(jaw);
+  const xe=xb+ue*hl,we=wS(ue),te=tS(ue),eR=0.13*hw,eyeY=te*Math.pow(Math.sqrt(1-0.66*0.66),0.7)+0.02*hw;
+  const irisM=new THREE.MeshStandardMaterial({color:lin(0xb39a3c),roughness:0.35}),pupM=new THREE.MeshStandardMaterial({color:0x080806,roughness:0.1});
+  const un=0.93,xn=xb+un*hl,wn=wS(un),tn=tS(un),nY=tn*0.95;
+  const bumpM=new THREE.MeshStandardMaterial({color:COL.dors,roughness:0.5}),holeM=new THREE.MeshBasicMaterial({color:0x050504});
+  for(const sd of[-1,1]){
+    const ir=new THREE.Mesh(new THREE.SphereGeometry(eR,12,8),irisM);ir.position.set(xe,eyeY,sd*0.66*we);
+    const pu=new THREE.Mesh(new THREE.SphereGeometry(eR*0.74,10,8),pupM);pu.position.set(xe+0.12*eR,eyeY+0.4*eR,sd*(0.66*we+0.22*eR));
+    const nb=new THREE.Mesh(new THREE.SphereGeometry(0.075*hw,8,6),bumpM);nb.position.set(xn,nY,sd*0.3*wn);
+    const nh=new THREE.Mesh(new THREE.SphereGeometry(0.035*hw,6,4),holeM);nh.position.set(xn+0.01*hw,nY+0.055*hw,sd*0.3*wn);
+    head.add(ir,pu,nb,nh);
+  }
+  const eyeTop=eyeY+eR*1.1,nosTop=nY+0.08*hw,subPitch=Math.atan2(eyeTop-nosTop,xn-xe); // level eyes and nostrils at the surface
+  const tongue=new THREE.Group();tongue.position.set(xt-0.06*hw,-0.04*hw,0);
+  const tm=new THREE.MeshStandardMaterial({color:lin(0x2a1820),roughness:0.4});
+  const stem=new THREE.Mesh(new THREE.BoxGeometry(0.95*hw,0.035*hw,0.06*hw),tm);stem.position.x=0.475*hw;tongue.add(stem);
+  for(const sd of[-1,1]){const pr=new THREE.Mesh(new THREE.BoxGeometry(0.4*hw,0.03*hw,0.04*hw),tm);pr.position.set(0.95*hw+0.18*hw,0,sd*0.065*hw);pr.rotation.y=-sd*0.34;tongue.add(pr)}
+  tongue.visible=false;
+  head.add(skull,jawPivot,tongue);scene.add(head);
+  const F32=()=>new Float32Array(N);
+  SR={p,L,N,M,ds,rm,rn,hw,hl,xt,xb,hb,ib:Math.ceil(hb/ds),prof,mesh,geo,head,jaw:jawPivot,tongue,csj,ycj,eyeTop,subPitch,xe,xn,
+    bulgeAmp:Math.min(0.9,0.52/rm),bulgeSig:0.8+0.4*p.size,k:TAU/(L/3),ampBase:L/36*1.05,k2:TAU/(3.2*rm),
+    bx:F32(),bz:F32(),tx:F32(),tz:F32(),px:F32(),py:F32(),pz:F32(),rr:F32(),ux:F32(),uy:F32(),uz:F32(),hel:F32(),lift:F32(),lift2:F32(),sink:F32(),sink2:F32(),
+    vt:0,phase:0,phase2:0,amp:0,rect:0,subF:0,tel:0,sweep:0,hy:null,pitch:0,cw:0,con:null,conY:0,tongT:0,
+    ripT:0,bodyRipT:0,breathT:2,bubT:0,lastPres:'',holdW:new THREE.Vector3()};
+}
+function sampleSpine(s,R){ // ring centres every ds metres back along the head path (extrapolated straight past its end)
+  const path=s.path,N=R.N,ds=R.ds;let k=path.length-1,ax=s.head.x,az=s.head.z,bx=path[k].x,bz=path[k].z,segL=Math.hypot(bx-ax,bz-az),acc=0,dx=0,dz=0,ext=false;
+  R.bx[0]=ax;R.bz[0]=az;
+  for(let i=1;i<N;i++){
+    if(ext){R.bx[i]=R.bx[i-1]+dx*ds;R.bz[i]=R.bz[i-1]+dz*ds;continue}
+    let need=ds;
+    for(;;){const rem=segL-acc;if(need<=rem){acc+=need;break}need-=rem;k--;
+      if(k<0){ext=true;break}
+      ax=bx;az=bz;bx=path[k].x;bz=path[k].z;segL=Math.hypot(bx-ax,bz-az);acc=0}
+    if(ext){const l=Math.hypot(R.bx[i-1]-R.bx[Math.max(0,i-2)],R.bz[i-1]-R.bz[Math.max(0,i-2)])||1;dx=(R.bx[i-1]-R.bx[Math.max(0,i-2)])/l;dz=(R.bz[i-1]-R.bz[Math.max(0,i-2)])/l;if(i<2){dx=-Math.cos(s.h);dz=-Math.sin(s.h)}R.bx[i]=R.bx[i-1]+dx*ds;R.bz[i]=R.bz[i-1]+dz*ds;continue}
+    const t=segL>1e-6?acc/segL:0;R.bx[i]=ax+(bx-ax)*t;R.bz[i]=az+(bz-az)*t;
+  }
+}
+function bodyY(x,z,bTop,bBot,subF){ // centre height of a body section: on the ground, swimming with only the dorsal ridge out, or fully under
+  const e=edgeAt(x,z),g=groundY(x,z),land=Math.max(0,g)+bBot*0.92;if(e>0.4)return land;
+  let wy=lerp(WATER_Y-0.6*bTop,WATER_Y-bTop-0.08,subF);wy=Math.max(wy,g+bBot*0.9);
+  return lerp(land,wy,sstep(0.4,-0.9,e));
+}
+const CON_PRES=new Set(['Constrict','Drowning']);
+const _hv=new THREE.Vector3();
+function renderSnake(rdt){
+  const s=world.snake,brain=world.brain,c=brain.ctx,R=SR,{N,M,ds,L,hb,hw,rm}=R;
+  const gdt=clock.paused?0:Math.min(0.5,rdt*clock.scale),sdt=clock.paused?rdt:Math.min(0.5,rdt*clock.scale);
+  R.vt+=sdt;
+  const op=brain.planner.op,cur=brain.planner.current,pres=s.pres,headW=edgeAt(s.head.x,s.head.z)<-0.2,creep=pres==='Creep'||pres==='Sneak';
+  R.subF+=((s.submerge&&s.inWater()?1:0)-R.subF)*ease(2.5,sdt);
+  R.tel+=((pres==='Telegraph'?1:0)-R.tel)*ease(5,sdt);
+  // travelling wave: phase advances with distance travelled (stationary in the world on land, slipping a little in water)
+  let mode=1;if(creep)mode=0.08;else if(pres==='Telegraph'||pres==='Lunge'||pres==='Ambush strike')mode=0.15;
+  else if(CON_PRES.has(pres)||pres==='Swallow')mode=0;else if(op&&op.coil&&!op.wade)mode=0;else if(op&&op.wade)mode=0.6;
+  if(!(mode===1&&s.speed<0.1))R.amp+=(R.ampBase*(headW?1.3:1)*mode*clamp(s.speed/1.2,0,1)-R.amp)*ease(1.5,sdt); // a halted snake keeps its curves
+  const dph=R.k*s.speed*(headW?1.25:1)*gdt;R.phase+=dph;
+  const amp=R.amp*(dph>0.8?0.8/dph:1); // fade instead of strobing at high time scales
+  R.rect+=((creep&&s.speed>0.03?1:0)-R.rect)*ease(3,sdt);if(s.speed>0.03)R.phase2+=3*gdt;
+  R.sweep+=((s.sweep?Math.sin(s.sweepT*1.3)*0.5:0)-R.sweep)*ease(6,sdt);
+  sampleSpine(s,R);
+  R.tx[0]=R.bx[0];R.tz[0]=R.bz[0];R.tx[N-1]=R.bx[N-1];R.tz[N-1]=R.bz[N-1];
+  for(let i=1;i<N-1;i++){R.tx[i]=(R.bx[i-1]+2*R.bx[i]+R.bx[i+1])*0.25;R.tz[i]=(R.bz[i-1]+2*R.bz[i]+R.bz[i+1])*0.25}
+  const hx=s.head.x,hz=s.head.z,neckEnd=hb+2.5*hw;
+  for(let i=0;i<N;i++){
+    const a=i>0?i-1:0,b=i<N-1?i+1:N-1;let fx=R.tx[a]-R.tx[b],fz=R.tz[a]-R.tz[b];const l=Math.hypot(fx,fz)||1;fx/=l;fz/=l;
+    const si=i*ds,off=amp*sstep(hb*0.7,hb+0.12*L,si)*(0.75+0.25*si/L)*Math.sin(R.phase-R.k*si); // envelope 0 at the head
+    let x=R.tx[i]-fz*off,z=R.tz[i]+fx*off;
+    if(si<neckEnd&&Math.abs(R.sweep)>1e-3){const a2=R.sweep*(1-sstep(hb*0.5,neckEnd,si)),ca=Math.cos(a2),sa=Math.sin(a2),dx=x-hx,dz=z-hz;x=hx+dx*ca-dz*sa;z=hz+dx*sa+dz*ca} // neck follows a head sweep
+    R.px[i]=x;R.pz[i]=z;R.ux[i]=0;R.uy[i]=1;R.uz[i]=0;R.hel[i]=0;
+  }
+  // radius: profile x bulge x rectilinear pulse
+  const sw=cur&&cur.name==='Swallow'&&op?clamp(op.t/3.6,0,1):-1;let bS=-99,bA=0;
+  if(sw>=0){bS=lerp(0.3*hb,hb+1.6*hw,sstep(0.45,1,sw));bA=R.bulgeAmp*sstep(0.45,0.75,sw)}
+  else if(s.bulge>0.02){bS=lerp(hb+1.6*hw,0.62*L,Math.pow(1-s.bulge,0.4));bA=R.bulgeAmp*clamp((s.bulge-0.02)/0.25,0,1)}
+  for(let i=0;i<N;i++){const si=i*ds;let r=R.prof[i];if(bA>0){const u=(si-bS)/R.bulgeSig;r*=1+bA*Math.exp(-u*u)}if(R.rect>0.01&&si>hb)r*=1+0.06*R.rect*Math.sin(R.k2*si-R.phase2);R.rr[i]=r;
+    R.py[i]=bodyY(R.px[i],R.pz[i],0.86*r,0.7*r,R.subF)}
+  // head pose on the true sim position
+  const F={x:Math.cos(s.h),z:Math.sin(s.h)},e=edgeAt(hx,hz),g=groundY(hx,hz),wb=sstep(0.3,-0.9,e);
+  const raise=creep?-0.06*hw:pres==='Balled'?-0.25*hw:0.12*hw*clamp(s.speed,0,1);
+  let wy=lerp(WATER_Y-0.12*hw,WATER_Y+0.03-R.eyeTop,R.subF);wy=Math.max(wy,g+0.5*hw);
+  const hyT=lerp(Math.max(0,g)+0.46*hw+raise,wy,wb)+R.tel*0.9*hw;
+  R.hy=R.hy===null?hyT:R.hy+(hyT-R.hy)*ease(9,sdt);
+  const slope=(1-wb)*Math.atan2(groundY(hx+F.x*R.xt,hz+F.z*R.xt)-groundY(hx+F.x*R.xb,hz+F.z*R.xb),R.hl);
+  const pitchT=lerp(creep?-0.04:0.05*clamp(s.speed,0,1),R.subPitch,wb*R.subF)+R.tel*0.22+slope;
+  R.pitch+=(pitchT-R.pitch)*ease(6,sdt);
+  let Hx=hx,Hy=R.hy,Hz=hz,Hyaw=s.h+R.sweep,Hp=R.pitch;
+  // constriction: 2-3 tight loops wrapped AROUND the prey (pinned where the coil began), the rest coiled flat beside it
+  const conOn=!!c.carried&&CON_PRES.has(pres)&&!!cur&&cur.name==='Constrict';
+  if(conOn&&!R.con){const hd=R.xt-0.32*R.hl;let x=hx+F.x*hd,z=hz+F.z*hd;const o=nearestPond({x,z}),ed=dist({x,z},o)-o.r,need=Math.min(o.r*0.62,0.32*L/Math.PI+2*rm);
+    if((pres==='Drowning'||ed<1)&&ed>-need){const d=norm(sub({x,z},o));x=o.x+d.x*(o.r-need);z=o.z+d.z*(o.r-need)} // slide the kill into the pool so the whole coil lies under water
+    R.con={x,z,Ax:-F.z,Az:F.x,Vx:F.x,Vz:F.z,inW:edgeAt(x,z)<-0.6,preyR:c.carried.kind==='capybara'?0.42:0.3,t0:R.vt}}
+  R.cw+=((conOn?1:0)-R.cw)*ease(conOn?1.8:2.5,sdt);if(!conOn&&R.cw<0.01)R.con=null;
+  const sq=R.con?Math.pow(Math.max(0,Math.sin((R.vt-R.con.t0)*2.2)),2)*(c.carried&&c.carried.limp?0.35:1):0; // squeeze pulses
+  if(R.con&&R.cw>0.001){
+    const C=R.con,cw=R.cw,rF=0.75*rm,preyR=C.preyR*(1-0.12*sq),fl=groundY(C.x,C.z),Rlt=preyR+0.7*rF;
+    const cy=C.inW?Math.max(fl+Rlt+0.86*rF+0.05,WATER_Y-Rlt-0.86*rF-0.15):Math.max(0,fl)+C.preyR*0.95;R.conY=cy;
+    const nL=2.25,span=nL*2.05*rF;let xa=-span/2,phi=0,ex=0,ey=0,ez=0,eux=0,euy=1,euz=0,sEnd=-1,psi=0,rho0=Math.max(span/2,Rlt)+1.15*rm+0.1,rho=rho0,psi0=0,sg=1;
+    const Rl0=preyR+0.7*R.rr[R.ib]*(1-0.1*sq),stx=C.x+C.Ax*xa,sty=cy+Rl0,stz=C.z+C.Az*xa;
+    for(let i=0;i<N;i++){
+      const si=i*ds;let qx,qy,qz,ux=0,uy=1,uz=0,hel=1;
+      if(si<hb){qx=stx+C.Vx*(hb-si);qy=sty;qz=stz+C.Vz*(hb-si)}
+      else if(sEnd<0){const Rl=preyR+0.7*R.rr[i]*(1-0.1*sq),cp=Math.cos(phi),sp=Math.sin(phi);ux=cp*1;uy=0;uz=0;
+        const rx=C.Vx*sp,rz=C.Vz*sp;ux=rx;uy=cp;uz=rz; // radial direction from the prey's long axis
+        qx=C.x+C.Ax*xa+Rl*rx;qy=cy+Rl*cp;qz=C.z+C.Az*xa+Rl*rz;
+        phi+=ds/Rl;xa+=ds/Rl/TAU*2.05*R.rr[i];
+        if(phi>=TAU*nL){sEnd=si;ex=qx;ey=qy;ez=qz;eux=ux;euy=uy;euz=uz;psi0=psi=Math.atan2(qz-C.z,qx-C.x);
+          const tx=-Math.sin(psi),tz=Math.cos(psi);sg=(tx*-C.Vx+tz*-C.Vz)>=0?1:-1}}
+      else{rho=rho0+2.15*rm*Math.abs(psi-psi0)/TAU;psi+=sg*ds/rho;
+        const sx=C.x+Math.cos(psi)*rho,sz=C.z+Math.sin(psi)*rho,r=R.rr[i],sy=bodyY(sx,sz,0.86*r,0.7*r,C.inW?1:R.subF),w=sstep(0,2.5*rm,si-sEnd);
+        qx=lerp(ex,sx,w);qy=lerp(ey,sy,w);qz=lerp(ez,sz,w);ux=lerp(eux,0,w);uy=lerp(euy,1,w);uz=lerp(euz,0,w);hel=1-w}
+      R.px[i]=lerp(R.px[i],qx,cw);R.py[i]=lerp(R.py[i],qy,cw);R.pz[i]=lerp(R.pz[i],qz,cw);
+      const ul=Math.hypot(lerp(0,ux,cw),lerp(1,uy,cw),lerp(0,uz,cw))||1;R.ux[i]=lerp(0,ux,cw)/ul;R.uy[i]=lerp(1,uy,cw)/ul;R.uz[i]=lerp(0,uz,cw)/ul;R.hel[i]=hel*cw;
+    }
+    const chx=stx+C.Vx*hb,chz=stz+C.Vz*hb,chy=cy+C.preyR+0.3*hw;
+    Hx=lerp(Hx,chx,cw);Hz=lerp(Hz,chz,cw);Hy=lerp(Hy,chy,cw);Hyaw=Hyaw+wrapA(Math.atan2(C.Vz,C.Vx)-Hyaw)*cw;Hp=lerp(Hp,-0.15,cw);
+  }
+  // stacking: where the body crosses itself the head-side part rides over the tail-side part (reversed when balled up)
+  const lift=R.lift,lf=R.lift2,sink=R.sink,sf=R.sink2;lift.fill(0);sink.fill(0);
+  if(R.cw<0.95){
+    const gap=Math.ceil(2.6*rm/ds)+2,top=pres!=='Balled';
+    const test=(u,d)=>{const ru=R.rr[u],rd=R.rr[d],dx=R.px[u]-R.px[d],dz=R.pz[u]-R.pz[d],Rs=(ru+rd)*0.95,d2=dx*dx+dz*dz;if(d2>=Rs*Rs)return;
+      let need=(0.86*rd+0.7*ru)*Math.sqrt(1-d2/(Rs*Rs))-((R.py[u]+lift[u])-(R.py[d]-sink[d]));if(need<=0)return;
+      if(edgeAt(R.px[d],R.pz[d])<-0.8){const room=R.py[d]-sink[d]-(groundY(R.px[d],R.pz[d])+0.7*rd),k=Math.min(need,Math.max(0,room));sink[d]+=k;need-=k} // in a pool the lower part dives under
+      if(need>0)lift[u]+=need};
+    if(top){for(let i=N-1;i>=0;i--)for(let j=i+gap;j<N;j++)test(i,j)}else{for(let i=0;i<N;i++)for(let j=0;j<=i-gap;j++)test(i,j)}
+    const m=Math.ceil(3*rm/ds);lf.fill(0);sf.fill(0);
+    const spread=(src,dst)=>{for(let i=0;i<N;i++){const v=src[i];if(v<=0)continue;for(let k=-m;k<=m;k++){const q=i+k;if(q<0||q>=N)continue;const w=v*0.5*(1+Math.cos(Math.PI*k/(m+1)));if(w>dst[q])dst[q]=w}}};
+    spread(lift,lf);spread(sink,sf);
+    for(let i=0;i<N;i++)R.py[i]+=(lf[i]-sf[i])*(1-R.cw);
+    Hy+=(lf[R.ib]-sf[R.ib])*(1-R.cw);
+  }
+  // neck: rings inside / just behind the head follow the head line
+  const sp=Math.sin(Hp);
+  for(let i=0;i<N;i++){const si=i*ds;if(si>=hb+3*hw)break;const w=sstep(hb*0.6,hb+3*hw,si);R.py[i]=lerp(Hy+0.12*hw-si*sp,R.py[i],w)}
+  // build the tube
+  const pos=R.geo.attributes.position.array;let sx0=0,sy0=0,sz0=1;
+  for(let i=0;i<N;i++){
+    const a=i>0?i-1:0,b=i<N-1?i+1:N-1;let tx=R.px[a]-R.px[b],ty=R.py[a]-R.py[b],tz=R.pz[a]-R.pz[b];const tl=Math.hypot(tx,ty,tz)||1;tx/=tl;ty/=tl;tz/=tl;
+    let ux=R.ux[i],uy=R.uy[i],uz=R.uz[i],sx=ty*uz-tz*uy,sy=tz*ux-tx*uz,sz=tx*uy-ty*ux;const sl=Math.hypot(sx,sy,sz);
+    if(sl<1e-4){sx=sx0;sy=sy0;sz=sz0}else{sx/=sl;sy/=sl;sz/=sl}
+    ux=sy*tz-sz*ty;uy=sz*tx-sx*tz;uz=sx*ty-sy*tx;sx0=sx;sy0=sy;sz0=sz;
+    const r=R.rr[i]*(1+0.06*sq*R.hel[i]),cx=R.px[i],cy=R.py[i],cz=R.pz[i];
+    for(let j=0;j<M;j++){const cs=R.csj[j]*r,yc=R.ycj[j]*r,k=(i*M+j)*3;pos[k]=cx+sx*cs+ux*yc;pos[k+1]=cy+sy*cs+uy*yc;pos[k+2]=cz+sz*cs+uz*yc}
+  }
+  R.geo.attributes.position.needsUpdate=true;R.geo.computeVertexNormals();
+  // head transform, jaw, tongue
+  R.head.position.set(Hx,Hy,Hz);R.head.rotation.set(0,-Hyaw,Hp);
+  R.jaw.rotation.z=-s.mouth*(sw>=0?1.15:c.carried?0.85:0.75);
+  if(s.tongue)R.tongT+=sdt;else R.tongT=0;
+  let ext=0;if(s.tongue){const ph=(R.tongT%1.5)/1.5;ext=ph<0.1?ph/0.1:ph<0.45?1:ph<0.55?1-(ph-0.45)/0.1:0}
+  R.tongue.visible=ext>0.02;R.tongue.scale.set(Math.max(0.02,ext),1,1);R.tongue.rotation.z=(0.28*Math.sin(R.vt*28)-0.08)*ext;
+  R.head.updateMatrixWorld();R.holdW.set(R.xt-0.32*R.hl,-0.08*hw,0).applyMatrix4(R.head.matrixWorld);
+  // water effects
+  const fdt=clock.paused?rdt:Math.min(0.25,rdt*clock.scale),mx=Hx+Math.cos(Hyaw)*R.xt*0.85,mz=Hz+Math.sin(Hyaw)*R.xt*0.85;
+  if(headW&&s.speed>0.15&&R.cw<0.5){R.ripT-=fdt;if(R.ripT<=0){R.ripT=clamp(0.3/s.speed,0.08,0.4);addRipple(mx,mz,0.35*hw,0.7,2.6,1-0.55*R.subF)}} // rings shed at the snout spread slower than the snake moves: a V-wake
+  if(headW&&s.speed>0.3&&R.subF<0.5){R.bodyRipT-=fdt;if(R.bodyRipT<=0){R.bodyRipT=0.16;const i=R.ib+Math.floor(Math.random()*(N-R.ib));if(edgeAt(R.px[i],R.pz[i])<-0.3)addRipple(R.px[i],R.pz[i],R.rr[i]*0.9,0.3,1.8,0.4)}}
+  if(R.subF>0.8&&s.speed<0.15&&headW&&R.cw<0.5){R.breathT-=fdt;if(R.breathT<=0){R.breathT=5+Math.random()*4;_hv.set(R.xn,0,0).applyMatrix4(R.head.matrixWorld);addRipple(_hv.x,_hv.z,0.12,0.45,2.6,0.8);addRipple(_hv.x,_hv.z,0.04,0.28,2,0.5);addBubble(_hv.x,WATER_Y-0.25,_hv.z)}}
+  if(R.con&&R.con.inW&&R.cw>0.5){R.bubT-=fdt;if(R.bubT<=0){R.bubT=0.06+Math.random()*0.12;addBubble(R.con.x+rand(-0.5,0.5),R.conY+0.4,R.con.z+rand(-0.5,0.5))}}
+  if(pres==='Ambush strike'&&R.lastPres!=='Ambush strike')for(let k=0;k<4;k++)addRipple(mx,mz,0.3+k*0.5,2.4-k*0.4,1.4+k*0.35,1.3);
+  R.lastPres=pres;
+  updateWater(fdt);
+}
+// ---- caught prey: limp on its side at the mouth (drag), pinned inside the coils (constrict / drown), slid in head-first (swallow).
+// Generic transforms on whatever prey mesh group exists: local +x = facing, +y = up; humans' long axis is y, other kinds' is x.
+const _lx=new THREE.Vector3(),_ly=new THREE.Vector3(),_lz=new THREE.Vector3(),_lm=new THREE.Matrix4(),_lo=new THREE.Vector3(),_lc=new THREE.Vector3();
+function layPrey(g,kind,cx,cy,cz,ax,az,roll,sc){
+  const al=Math.hypot(ax,az)||1;ax/=al;az/=al;const cr=Math.cos(roll),sr=Math.sin(roll);
+  const perp=_lo.set(-az*cr,sr,ax*cr);
+  if(kind==='human'){_lx.copy(perp);_ly.set(ax,0,az)}else{_lx.set(ax,0,az);_ly.copy(perp)}
+  _lz.crossVectors(_lx,_ly);_lm.makeBasis(_lx,_ly,_lz);g.quaternion.setFromRotationMatrix(_lm);g.scale.setScalar(sc);
+  const h=g.userData.centerY!=null?g.userData.centerY:kind==='human'?0.9:0.5;
+  g.position.set(cx,cy,cz).sub(_lc.set(0,h*sc,0).applyQuaternion(g.quaternion));
+}
+function poseCaught(pr,g){
+  const R=SR,pl=world.brain.planner,sw=pl.current&&pl.current.name==='Swallow'&&pl.op?clamp(pl.op.t/3.6,0,1):-1;
+  const yaw=R.head.rotation.y*-1,Fx=Math.cos(yaw),Fz=Math.sin(yaw);
+  let cx=R.holdW.x,cy=R.holdW.y,cz=R.holdW.z,ax=-Fz,az=Fx,sc=1;
+  const roll=pr.limp?0.15:Math.sin(R.vt*7+pr.id)*0.35; // struggling until the constriction has done its work
+  if(sw>=0){ // turn head-first, slide into the gaping mouth, shrinking
+    const tw=sstep(0,0.3,sw),half=pr.kind==='human'?0.9:0.6;sc=lerp(1,0.5,sstep(0.25,1,sw));
+    ax=lerp(-Fz,-Fx,tw);az=lerp(Fx,-Fz,tw);
+    const xf=lerp(R.xt-0.32*R.hl,R.xb-0.2*R.hw,sstep(0.25,0.95,sw));_hv.set(xf+half*sc*tw,-0.08*R.hw,0).applyMatrix4(R.head.matrixWorld);cx=_hv.x;cy=_hv.y;cz=_hv.z;
+    g.visible=sw<0.96;
+  }
+  if(R.con&&R.cw>0.001){const C=R.con,w=R.cw;cx=lerp(cx,C.x,w);cy=lerp(cy,R.conY,w);cz=lerp(cz,C.z,w);ax=lerp(ax,C.Ax,w);az=lerp(az,C.Az,w);sc*=1-0.05*w*Math.pow(Math.max(0,Math.sin((R.vt-C.t0)*2.2)),2)}
+  layPrey(g,pr.kind,cx,cy,cz,ax,az,roll,sc);
+}
+// ---- water surface effects: pooled ripple rings (one draw call; rings shed at a moving snout form its V-wake), rising bubbles
+const FX={rips:[],ripI:0,bubs:[],bubI:0};
+{
+  const NR=96,NB=48,rg=new THREE.RingGeometry(0.9,1,48);rg.rotateX(-Math.PI/2);
+  FX.rip=new THREE.InstancedMesh(rg,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}),NR);
+  FX.rip.instanceMatrix.setUsage(THREE.DynamicDrawUsage);FX.rip.frustumCulled=false;FX.rip.renderOrder=3;
+  const z0=new THREE.Matrix4().makeScale(0,0,0),blk=new THREE.Color(0,0,0);
+  for(let i=0;i<NR;i++){FX.rip.setMatrixAt(i,z0);FX.rip.setColorAt(i,blk);FX.rips.push({age:1,life:1})}
+  scene.add(FX.rip);
+  FX.bub=new THREE.InstancedMesh(new THREE.SphereGeometry(1,8,6),new THREE.MeshBasicMaterial({color:0xd8eef2,transparent:true,opacity:0.5,depthWrite:false}),NB);
+  FX.bub.instanceMatrix.setUsage(THREE.DynamicDrawUsage);FX.bub.frustumCulled=false;
+  for(let i=0;i<NB;i++){FX.bub.setMatrixAt(i,z0);FX.bubs.push({on:false})}
+  scene.add(FX.bub);
+}
+function addRipple(x,z,r0,grow,life,str){const q=FX.rips[FX.ripI++%FX.rips.length];Object.assign(q,{x,z,r0,grow,life,str,age:0})}
+function addBubble(x,y,z){const b=FX.bubs[FX.bubI++%FX.bubs.length];Object.assign(b,{on:true,x,y,z,vy:rand(0.6,1.1),sz:rand(0.04,0.11),ph:Math.random()*TAU})}
+const _fm=new THREE.Matrix4(),_fp=new THREE.Vector3(),_fs=new THREE.Vector3(),_fq=new THREE.Quaternion(),_fc=new THREE.Color();
+function updateWater(fdt){
+  const light=clamp(0.22+sunElev(clock.day)*1.1,0.12,1);
+  FX.rips.forEach((q,i)=>{
+    if(q.age>=q.life){if(q.age<9){q.age=9;FX.rip.setMatrixAt(i,_fm.makeScale(0,0,0));FX.rip.setColorAt(i,_fc.setRGB(0,0,0))}return}
+    q.age+=fdt;const t=Math.min(1,q.age/q.life),r=q.r0+q.grow*q.age,f=q.str*Math.pow(1-t,1.6)*light*0.14;
+    FX.rip.setMatrixAt(i,_fm.compose(_fp.set(q.x,WATER_Y+0.015,q.z),_fq.identity(),_fs.set(r,1,r)));FX.rip.setColorAt(i,_fc.setRGB(f*0.9,f,f));
+  });
+  FX.rip.instanceMatrix.needsUpdate=true;FX.rip.instanceColor.needsUpdate=true;
+  FX.bubs.forEach((b,i)=>{if(!b.on)return;b.y+=b.vy*fdt;b.ph+=fdt*9;
+    if(b.y>=WATER_Y){b.on=false;FX.bub.setMatrixAt(i,_fm.makeScale(0,0,0));addRipple(b.x,b.z,0.03,0.35,1.1,0.55);return}
+    FX.bub.setMatrixAt(i,_fm.compose(_fp.set(b.x+Math.sin(b.ph)*0.04,b.y,b.z+Math.cos(b.ph)*0.04),_fq.identity(),_fs.setScalar(b.sz)))});
+  FX.bub.instanceMatrix.needsUpdate=true;
 }
 const preyMeshes=new Map();
 function preyMesh(p){
@@ -1290,39 +1569,21 @@ function sky(d){
   const e=sunElev(d);const night=new THREE.Color(0x0b1422),day=new THREE.Color(0xa6c6d4),dusk=new THREE.Color(0xc98656);
   const k=clamp((e+0.15)/0.5,0,1);const col=night.clone().lerp(day,k);col.lerp(dusk,Math.exp(-Math.pow(e/0.17,2))*0.55);return col;
 }
-const tmpM=new THREE.Matrix4(),tmpQ=new THREE.Quaternion(),tmpV=new THREE.Vector3(),tmpS=new THREE.Vector3();
-function render(){
-  const s=world.snake,p=s.p,brain=world.brain,c=brain.ctx;
+function render(rdt){
+  const s=world.snake,brain=world.brain,c=brain.ctx;
   // light
   const e=sunElev(clock.day);const col=sky(clock.day);scene.background=col;scene.fog.color.copy(col);
   const a=(clock.day-0.25)*TAU;const ft=controls.target;
   sun.position.set(ft.x+Math.cos(a)*120,Math.sin(a)*150,ft.z+50);sun.target.position.copy(ft);sun.intensity=clamp(e*1.4,0,0.9);
   moon.position.set(ft.x-Math.cos(a)*120,-Math.sin(a)*150,ft.z-40);moon.target.position.copy(ft);moon.intensity=clamp(-e*0.6,0,0.35);
   hemi.intensity=0.28+0.3*Math.max(0,e);
-  // snake body
-  const segs=s.segments();const inW=pt=>!!pondAt(pt,-0.3);
-  for(let i=0;i<p.segs;i++){
-    const t=i/(p.segs-1);
-    let r=(t<0.08?lerp(0.55,0.75,t/0.08):t<0.45?0.75:lerp(0.75,0.12,(t-0.45)/0.55))*p.size;
-    if(s.bulge>0.02){const bi=lerp(0.12,0.7,1-s.bulge)*(p.segs-1);r*=1+0.65*Math.exp(-Math.pow((i-bi)/3,2))}
-    const q=segs[i];const water=inW(q);
-    const ty=water?(s.submerge?-0.95:-0.32):r*0.85;
-    segY[i]=lerp(segY[i],ty,0.12);
-    tmpM.compose(tmpV.set(q.x,segY[i],q.z),tmpQ.identity(),tmpS.set(r,r*0.9,r));snakeMesh.setMatrixAt(i,tmpM);
-  }
-  snakeMesh.instanceMatrix.needsUpdate=true;
-  const hw=inW(s.head);const hy=hw?(s.submerge?-0.25:-0.05):0.45*p.size;
-  const sweep=s.sweep?Math.sin(s.sweepT*1.3)*0.5:0;
-  headGroup.position.set(s.head.x,lerp(headGroup.position.y,hy,0.15),s.head.z);headGroup.rotation.set(0,-(s.h+sweep),0);
-  jaw.rotation.z=-s.mouth*0.75;
-  tongue.visible=s.tongue&&Math.sin(s.sweepT*9)>0.3;
+  renderSnake(rdt);
   // prey
   const seen=new Set();
   for(const pr of world.prey){
     const g=preyMesh(pr);seen.add(pr);g.visible=pr.state!=='eaten';
-    g.position.set(pr.pos.x,pr.state==='caught'?0.6:pr.swimming?-0.38:0,pr.pos.z);g.rotation.y=-pr.h;
-    if(pr.kind==='human')g.scale.set(1,pr.crouch?0.6:1,1);
-    if(pr.state==='caught'){g.rotation.z=Math.PI/2*0.9;g.rotation.y=-s.h}else g.rotation.z=0;
+    if(pr.state==='caught')poseCaught(pr,g);
+    else{g.position.set(pr.pos.x,pr.swimming?-0.38:0,pr.pos.z);g.rotation.set(0,-pr.h,0);g.scale.set(1,pr.kind==='human'&&pr.crouch?0.6:1,1)}
     if(pr.kind==='noise'){const k=(pr.expires-clock.t)/2.5;g.userData.ring.scale.setScalar(1+(1-k)*4);g.userData.ring.material.opacity=0.8*k}
   }
   for(const [pr,g] of preyMeshes)if(!seen.has(pr)){scene.remove(g);preyMeshes.delete(pr)}
@@ -1341,9 +1602,10 @@ function render(){
     const pos=markGeo.attributes.position,colA=markGeo.attributes.color;let n=0;const cc=new THREE.Color();
     for(const pr of world.prey){if(pr.kind==='noise')continue;cc.set(pr.color);for(const m of pr.liveMarks(clock.t)){if(n>=MAXMARKS)break;const f=1-(clock.t-m.t)/SCENT_LIFE;pos.setXYZ(n,m.x,0.15,m.z);colA.setXYZ(n,cc.r*f,cc.g*f,cc.b*f);n++}}
     markGeo.setDrawRange(0,n);pos.needsUpdate=true;colA.needsUpdate=true;
-    while(brain.rippleQueue.length){const q=brain.rippleQueue.shift();const r=ripples[rippleIdx++%ripples.length];r.visible=true;r.position.set(q.p.x,0.1,q.p.z);r.userData={life:1,r:q.r};}
+    while(brain.rippleQueue.length){const q=brain.rippleQueue.shift();if(ripples.some(o=>o.visible&&o.userData.life>0.45&&Math.hypot(o.position.x-q.p.x,o.position.z-q.p.z)<Math.max(2,q.r)))continue; // one live ring per spot
+      const r=ripples[rippleIdx++%ripples.length];r.visible=true;r.position.set(q.p.x,0.1,q.p.z);r.userData={life:1,r:q.r};}
   }else brain.rippleQueue.length=0;
-  for(const r of ripples){if(!r.visible)continue;r.userData.life-=0.02;if(r.userData.life<=0){r.visible=false;continue}r.scale.setScalar(r.userData.r*(1.4-r.userData.life*0.4));r.material.opacity=0.6*r.userData.life}
+  for(const r of ripples){if(!r.visible)continue;r.userData.life-=rdt*1.25;if(r.userData.life<=0){r.visible=false;continue}r.scale.setScalar(r.userData.r*(1.4-r.userData.life*0.4));r.material.opacity=0.6*r.userData.life}
   renderer.render(scene,camera);
 }
 
@@ -1439,9 +1701,9 @@ function frame(now){
     let g=realDt*clock.scale;const step=1/30;let n=0;
     while(g>1e-6&&n<40){const dt=Math.min(step,g);world.step(dt);g-=dt;n++}
   }
-  if(ui.follow){const h=world.snake.head;const tx=lerp(controls.target.x,h.x,0.06),tz=lerp(controls.target.z,h.z,0.06);
+  if(ui.follow){const h=world.snake.head,k=ease(3.7,realDt);const tx=lerp(controls.target.x,h.x,k),tz=lerp(controls.target.z,h.z,k);
     camera.position.x+=tx-controls.target.x;camera.position.z+=tz-controls.target.z;controls.target.set(tx,0,tz)}
-  controls.update();render();
+  controls.update();render(realDt);
   panelT+=realDt;if(panelT>0.18){panelT=0;updatePanel()}
   requestAnimationFrame(frame);
 }
