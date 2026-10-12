@@ -43,6 +43,9 @@ button.on{background:var(--accent);color:#1b1406;border-color:var(--accent)}
 .slabel b{font:700 12.5px/1.2 var(--display);letter-spacing:.01em}
 .slabel i{font-style:normal;color:var(--accent);font-weight:500}
 .slabel.other{opacity:.72;font-size:10px}.slabel.other b{font-size:11px}
+.slabel.lift::before{content:"";position:absolute;left:50%;top:100%;width:1px;height:var(--lift,56px);background:color-mix(in srgb,var(--fg) 45%,transparent)} /* phones: the label floats above the snake on a leader line */
+#loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:13px var(--mono);color:var(--muted);background:var(--bg);z-index:3;transition:opacity .4s}
+#loading.done{opacity:0;pointer-events:none}
 .tabs{display:flex;gap:4px;flex-wrap:wrap}
 .tabs button{display:flex;align-items:center;gap:6px}
 .tabs button .dot{width:7px;height:7px}
@@ -128,6 +131,7 @@ p.note{font-size:13px;line-height:1.5;color:var(--muted);margin:0;max-width:65ch
 <div id="app">
   <main id="stage">
     <div id="view"></div>
+    <div id="loading">Building the island…</div>
     <div class="hud">
       <div class="brand"><span class="name"><em>Eunectes</em> · HTN planner</span><span id="clock">--:--</span></div>
       <div class="bars">
@@ -257,7 +261,14 @@ const HOME_RANGE=100; // home range radius around Reed Pool (plan §1.4: a prefe
 const CAMP={x:6,z:-8};
 const TERMINALS=[{x:-100,z:8},{x:96,z:34},{x:-6,z:-104},{x:46,z:112}];
 const rng=mulberry32(11);
-PONDS.forEach(o=>{const a=rng()*TAU;o.bask={x:o.x+Math.cos(a)*(o.r-0.3),z:o.z+Math.sin(a)*(o.r-0.3)}}); // on the bank, inside the AtWater band
+// organic shorelines: each pool's radius wobbles with the bearing (a few low harmonics, up to ~8% of the radius); every shore query
+// (pondAt / edgeDist / edgePoint / rimPt and the rendered ground and water) uses the same perturbed outline
+PONDS.forEach((o,i)=>{const r=mulberry32(101+i*7);o.sh=[];let tot=0;for(let k=0;k<4;k++){const a=(0.5+0.5*r())/(k+1.3);tot+=a;o.sh.push({f:k+2,a,p:r()*TAU})}
+  const sc=o.r*0.085/tot;o.sh.forEach(w=>w.a*=sc);o.A=o.r*0.085});
+const shoreOff=(o,a)=>{let v=0;for(const w of o.sh)v+=w.a*Math.sin(w.f*a+w.p);return v};
+const shoreR=(o,p)=>o.r+shoreOff(o,Math.atan2(p.z-o.z,p.x-o.x)); // shore radius on the bearing of p
+const rimPt=(o,a,off)=>{const r=o.r+shoreOff(o,a)+off;return {x:o.x+Math.cos(a)*r,z:o.z+Math.sin(a)*r}}; // a point `off` metres outside the shore (negative: in the water)
+PONDS.forEach(o=>{const a=rng()*TAU;o.bask=rimPt(o,a,-0.3)}); // on the bank, inside the AtWater band
 const TREES=[];
 while(TREES.length<80){
   const a=rng()*TAU,d=Math.sqrt(rng())*(ISLAND_R-12);const p={x:Math.cos(a)*d,z:Math.sin(a)*d};
@@ -269,15 +280,18 @@ const GRASS=[];
 PONDS.forEach(o=>{for(let k=0;k<2;k++){const a=rng()*TAU;GRASS.push({x:o.x+Math.cos(a)*(o.r+5),z:o.z+Math.sin(a)*(o.r+5),r:5+rng()*3})}});
 for(let k=0;k<5;k++){const a=rng()*TAU,d=30+rng()*90;GRASS.push({x:Math.cos(a)*d,z:Math.sin(a)*d,r:6+rng()*4})}
 
-const pondAt=(p,pad=0)=>{for(const o of PONDS)if(dist(o,p)<o.r+pad)return o;return null};
-const nearestPond=p=>PONDS.reduce((b,o)=>dist(o,p)-o.r<dist(b,p)-b.r?o:b);
-const edgeDist=p=>{let m=1e9;for(const o of PONDS)m=Math.min(m,dist(o,p)-o.r);return m}; // <0 means in water (depth)
+const pondAt=(p,pad=0)=>{for(const o of PONDS){const d=dist(o,p);if(d<o.r+o.A+pad&&d<shoreR(o,p)+pad)return o}return null};
+const pondGap=(o,p)=>dist(o,p)-shoreR(o,p);
+const nearestPond=p=>{let b=null,bd=1e9;for(const o of PONDS){const d0=dist(o,p)-o.r;if(d0-o.A>bd)continue;const d=d0+o.r-shoreR(o,p);if(d<bd){bd=d;b=o}}return b};
+const _ed=new Float64Array(8),PONDS_A2=2*Math.max(...PONDS.map(o=>o.A))+0.01;
+const edgeDist=p=>{let m0=1e9;for(let i=0;i<PONDS.length;i++){const o=PONDS[i],d=Math.hypot(o.x-p.x,o.z-p.z)-o.r;_ed[i]=d;if(d<m0)m0=d}
+  let m=1e9;for(let i=0;i<PONDS.length;i++){const o=PONDS[i],d0=_ed[i];if(d0>m0+PONDS_A2)continue;const d=d0+o.r-shoreR(o,p);if(d<m)m=d}return m}; // <0 means in water (depth)
 const inGrass=p=>GRASS.some(g=>dist(g,p)<g.r);
 const nearestTree=p=>TREES.reduce((b,t)=>dist(t,p)<dist(b,p)?t:b);
 const nearestGrass=p=>GRASS.reduce((b,g)=>dist(g,p)<dist(b,p)?g:b);
 function clampIsland(p,m=6){const l=len(p);return l>ISLAND_R-m?mul(p,(ISLAND_R-m)/l):p}
 function losBlocked(a,b){for(const t of TREES){if(Math.abs(t.x-a.x)>60&&Math.abs(t.x-b.x)>60)continue;if(segDist(t,a,b)<t.r+0.15)return true}return false}
-function edgePoint(o,toward,inset){const d=norm(sub(toward,o));return add(o,mul(d,o.r-inset))}
+function edgePoint(o,toward,inset){return rimPt(o,headingOf(sub(toward,o)),-inset)}
 
 /* The Liana Grove: six big climbable trees between Reed Pool and the west terminal, the tree anaconda's range.
    Neighbouring trunks (<= 12.6 m apart) are joined in the canopy: each sends a thick limb toward the other, so crossing is
@@ -376,7 +390,7 @@ function navRoute(from,to,prof,night){
 }
 // waypoints along a pool's shallows (an arc at a given inset), for prowling and shore travel inside one pool
 function shoreArc(o,from,to,inset){const a0=headingOf(sub(from,o)),a1=headingOf(sub(to,o)),da=wrapA(a1-a0),n=Math.max(2,Math.ceil(Math.abs(da)*(o.r-inset)/4)),out=[];
-  for(let k=1;k<=n;k++){const a=a0+da*k/n,r=Math.min(o.r-0.8,o.r-inset+rand(-1.1,1.1));out.push(add(o,mul(hdir(a),r)))}out[out.length-1]={...to};return out}
+  for(let k=1;k<=n;k++){const a=a0+da*k/n;out.push(rimPt(o,a,Math.min(-0.8,-inset+rand(-1.1,1.1))))}out[out.length-1]={...to};return out}
 
 /* ============================================================
    2. Clock: game seconds, day fraction, time-of-day buckets
@@ -436,7 +450,7 @@ class Prey{
     else if(r<pTerm+pPond&&now>world.pondAvoidUntil){
       const ok=PONDS.map((o,i)=>this.pondOK(o)?this.pondPref[i]:0),tot=ok.reduce((a,b)=>a+b,0);
       if(tot>0){let x=Math.random()*tot,o=PONDS[0];for(let i=0;i<PONDS.length;i++){x-=ok[i];if(x<=0){o=PONDS[i];break}}
-        g=this.safeGoal(world,()=>{const a=Math.random()*TAU;return {x:o.x+Math.cos(a)*(o.r+1.3),z:o.z+Math.sin(a)*(o.r+1.3)}});this.dwell=rand(4,14);this.atPond=!!g;
+        g=this.safeGoal(world,()=>{const a=Math.random()*TAU;return rimPt(o,a,1.3)});this.dwell=rand(4,14);this.atPond=!!g;
         this.shoreLegs=g&&Math.random()<0.5?1+Math.floor(Math.random()*3):0;this.shorePond=o}}
     else if(r<pTerm+pPond+pCamp){g=add(CAMP,randInCircle(5));this.dwell=tod===0?rand(30,90):rand(6,16)}
     else{g=this.safeGoal(world,()=>clampIsland(randInCircle(ISLAND_R-15),10));this.dwell=rand(2,6)}
@@ -493,7 +507,7 @@ class Prey{
       else if(this.state==='idle'){this.timer-=dt;this.h+=Math.sin(now*0.9+this.id*2)*dt*(now<this.vigilantUntil?1.2:0.4);if(this.timer<=0)this.pickGoal(world)}
       else if(this.state==='walk'){speed=this.goalSpeed;
         if(dist(this.pos,this.goal)<1.5&&this.atPond&&this.shoreLegs>0&&now>world.pondAvoidUntil){ // a stroll along the shore (checking the water, looking for a spot)
-          this.shoreLegs--;const o=this.shorePond,a=headingOf(sub(this.pos,o))+(Math.random()<0.5?1:-1)*rand(0.5,1.1);this.goal={x:o.x+Math.cos(a)*(o.r+rand(1.2,2.2)),z:o.z+Math.sin(a)*(o.r+rand(1.2,2.2))};this.goalSpeed=Math.min(this.goalSpeed,1.4)}
+          this.shoreLegs--;const o=this.shorePond,a=headingOf(sub(this.pos,o))+(Math.random()<0.5?1:-1)*rand(0.5,1.1);this.goal=rimPt(o,a,rand(1.2,2.2));this.goalSpeed=Math.min(this.goalSpeed,1.4)}
         else if(dist(this.pos,this.goal)<1.5){this.state='idle';this.timer=this.dwell;speed=0}
         else if(this.atPond&&(now<world.pondAvoidUntil||!this.pondOK(nearestPond(this.goal))))this.pickGoal(world)}
     }else{ // capybara: follow the herd's anchor; flee with the herd; swim
@@ -506,7 +520,7 @@ class Prey{
     if(speed>0&&goal){
       const dh=wrapA(headingOf(sub(goal,this.pos))-this.h);this.h+=clamp(dh,-4*dt,4*dt);
       let v=mul(hdir(this.h),speed);let np=add(this.pos,mul(v,dt));
-      if(human){const o=pondAt(np,1.2);if(o){const out=norm(sub(np,o));np=add(o,mul(out,o.r+1.2))}}
+      if(human){const o=pondAt(np,1.2);if(o)np=edgePoint(o,np,-1.2)}
       np=clampIsland(np,4);v=mul(sub(np,this.pos),1/dt);this.pos=np;this.vel=v;
     }else this.vel={x:0,z:0};
     this.speed=len(this.vel);
@@ -560,7 +574,7 @@ class Herd{
   }
   shoreSpot(world,inset){
     const o=this.pond,a0=headingOf(sub(this.anchor,o));
-    for(let k=0;k<7;k++){const a=a0+(k%2?1:-1)*Math.ceil(k/2)*0.7;const g=add(o,mul(hdir(a),o.r+inset));if(!world.feared(g))return g}
+    for(let k=0;k<7;k++){const a=a0+(k%2?1:-1)*Math.ceil(k/2)*0.7;const g=rimPt(o,a,inset);if(!world.feared(g))return g}
     return null;
   }
   alarm(world,from,why){
@@ -641,7 +655,7 @@ class SnakeBody{
   inWater(){return this.y<0.5&&!!pondAt(this.head,-0.5)}
   inTree(){return this.y>0.6}
   hiddenToPrey(){return (this.submerge&&this.inWater())||(this.speed<0.3&&inGrass(this.head))||(this.y>1.2&&this.speed<0.4)}
-  pushPath(){const last=this.path[this.path.length-1];if(Math.hypot(last.x-this.head.x,last.z-this.head.z,(last.y||0)-this.y)>0.2){this.path.push({x:this.head.x,z:this.head.z,y:this.y});if(this.path.length>this.maxPath)this.path.shift()}}
+  pushPath(){const last=this.path[this.path.length-1];if(Math.hypot(last.x-this.head.x,last.z-this.head.z,(last.y||0)-this.y)>0.2){this.path.push({x:this.head.x,z:this.head.z,y:this.y});if(this.y>0.004)this.elev=true;if(this.path.length>this.maxPath)this.path.shift()}}
   update(dt){
     this.mouth+=clamp(this.mouthTarget-this.mouth,-4*dt,4*dt);this.sweepT+=dt;this.bumped=false;this.micro(dt);
     if(!this.route&&this.y>0.05&&this.tSpeed>0&&this.descendFn){const r=this.descendFn(this.dH);if(r&&r.length)this.setRoute(r,BASE_SPEED*0.3,true)} // a ground order while up a tree: climb down first
@@ -657,6 +671,8 @@ class SnakeBody{
     }
     if(this.y>0.05&&this.y<0.45&&!this.route)this.y=Math.max(0,this.y-dt*1.5); // left just above the ground by an interrupted descent: slide down
     if(this.y>0.05){this.speed=0;return} // perched in a tree: holds on where it is
+    if(this.elev&&(this.speed<0.4||this.pres==='Constrict')){let n=0;let t=null;for(let k=this.path.length-1;k>=0&&n<16;k--){const q=this.path[k];if(!(q.y>0.004))continue;const dy=Math.min(q.y,dt*(1.7-n*0.09));q.y-=dy;n++;
+      t=t||nearestGrove(q);const v=sub(q,t),d=len(v);if(d<4.5&&d>0.01){q.x+=v.x/d*dy*0.6;q.z+=v.z/d*dy*0.6}}if(!n)this.elev=false} // (a body on a trunk spirals out from its base as it comes down) // presentation only: a body left up a trunk or limb after a drop is pulled down after the head (only the drawn height of the trail changes)
     this.pitch*=Math.max(0,1-dt*4);
     let want=hdir(this.dH);
     if(this.tSpeed>0&&this.tSpeed<6){ // soft avoidance (not during a lunge)
@@ -925,13 +941,13 @@ function openPause(op,c,dt){const s=c.snake;if(op.pz>0){op.pz-=dt;s.halt();retur
   if(s.y<0.5&&edgeDist(s.head)>2&&!inGrass(s.head)&&op.run>(op.nx||(op.nx=rand(7,14)))){op.run=0;op.nx=rand(7,14);op.pz=rand(0.8,2.4)*(c.getState(WS.TimeOfDay)===2?1.3:0.8);s.kickTongue();s.halt();return true}
   return false}
 function settleRoute(c,o,end){ // waypoints: into the pool, then along an arc of ~one body length that ends at the rest / ambush point
-  const s=c.snake,segs=s.segments(),wet=segs.filter(q=>edgeDist(q)<-0.3).length/segs.length;if(wet>=0.75&&(!end||dist(s.head,end)<2))return null;
-  if(wet>=0.6)return end&&dist(s.head,end)>=2?[end]:null; // the body is mostly in the water already: just glide to the spot
+  const s=c.snake,segs=s.segments(),wet=segs.filter(q=>edgeDist(q)<-0.6).length/segs.length;if(wet>=0.93&&(!end||dist(s.head,end)<2))return null;
+  if(wet>=0.9)return end&&dist(s.head,end)>=2?[end]:null; // the body is (almost) all in the water already: just glide to the spot
   o=o||nearestPond(s.head);const D=Math.min(o.r*0.4,4),R=o.r-D,a0=headingOf(sub(s.head,o)),wps=[];
-  const need=Math.min(Math.PI*1.2,s.p.segs*s.p.spacing*0.8/R),ae=end?headingOf(sub(end,o)):a0+need;
+  const need=Math.min(Math.PI*1.5,s.p.segs*s.p.spacing*0.95/R),ae=end?headingOf(sub(end,o)):a0+need;
   const as=Math.abs(wrapA(ae-need-a0))<Math.abs(wrapA(ae+need-a0))?ae-need:ae+need,sg=Math.sign(ae-as);
-  if(edgeDist(s.head)>-D+0.5)wps.push(add(o,mul(hdir(a0),R)));
-  const n=Math.ceil(need/0.5);for(let k=0;k<=n;k++)wps.push(add(o,mul(hdir(as+sg*k*need/n),R)));
+  if(edgeDist(s.head)>-D+0.5)wps.push(rimPt(o,a0,-D));
+  const n=Math.ceil(need/0.5);for(let k=0;k<=n;k++)wps.push(rimPt(o,as+sg*k*need/n,-D));
   if(end)wps.push(end);return wps;
 }
 function coilRestOp(name,o={}){return mkOp(name,{
@@ -960,7 +976,7 @@ function coilRestOp(name,o={}){return mkOp(name,{
     if(this.max&&this.t>=this.max)return S;
     return C;
   },
-  stop(c,how){const s=c.snake;s.halt();if(this.coil&&this.coil.done)c.lastCoil={x:s.head.x,z:s.head.z,odo:s.odo,wet:s.inWater()&&!o.dry,dry:!!o.dry};if(o.onStop)o.onStop(c,how,this)}
+  stop(c,how){const s=c.snake;s.halt();if(this.coil&&this.coil.done){const sg=s.segments();c.lastCoil={x:s.head.x,z:s.head.z,odo:s.odo,wet:!o.dry&&sg.filter(q=>edgeDist(q)<-0.6).length>=0.9*sg.length,dry:!!o.dry}}if(o.onStop)o.onStop(c,how,this)}
 })}
 function holdStillOp(name,pres,sub){return mkOp(name,{minDwell:4,
   start(c){const s=c.snake;s.halt();if(sub){s.submerge=true;s.deep=true}s.pres=pres;s.tongue=false;s.tongueQ=0;this.calm=0;this.linger=rand(4,16);s.lookAt=c.threatPoint?{...c.threatPoint}:null},
@@ -1054,7 +1070,7 @@ const Ops={
     start(c){const s=c.snake;s.submerge=true;s.pres='Ambush';s.tongue=false;c.ambushStaleAt=Math.max(c.ambushStaleAt,clock.t+c.p.patience*0.5)}, // traffic here: worth waiting longer
     update(c){
       const b=c.target,s=c.snake,o=c.ambushPond;if(!b||!o)return F;s.submerge=true;
-      const lk=b.lastKnown,wet=dist(lk,o)-o.r<3;
+      const lk=b.lastKnown,wet=pondGap(o,lk)<3;
       // quarry at the water's edge: glide slowly underwater toward the nearest water point; otherwise hold still and track it
       let g=edgePoint(o,lk,1.6);
       if(!wet&&dist(g,c.ambushPoint)>4)g=add(c.ambushPoint,mul(norm(sub(g,c.ambushPoint)),4));
@@ -1098,7 +1114,7 @@ const Ops={
       let tgt=null,best=-1e9;for(const q of PONDS){if(dist(q,c.home)>c.homeRange())continue;const tr=c.traffic(q),d=dist(q,s.head)-q.r;if(q!==o&&d>55)continue;
         const sc=tr-d/30+(q===o?0.4:0)+rand(0,0.6);if(sc>best){best=sc;tgt=q}}
       if(!tgt)tgt=o; // far from every pool in its range: head for the nearest
-      if(tgt===o){const a=headingOf(sub(s.head,o))+(Math.random()<0.5?1:-1)*rand(0.9,2)*14/o.r;c.travelGoal=add(o,mul(hdir(a),o.r-rand(1.5,3)))}
+      if(tgt===o){const a=headingOf(sub(s.head,o))+(Math.random()<0.5?1:-1)*rand(0.9,2)*14/o.r;c.travelGoal=rimPt(o,a,-rand(1.5,3))}
       else c.travelGoal=edgePoint(tgt,s.head,2.5);c.travelPond=tgt},update:()=>S}),
   prowl:moveOp('Prowl',c=>c.travelGoal,0.3,{tongue:true,pres:'Prowling',arrive:2.2,path:(c,p)=>c.travelPond&&pondAt(c.snake.head,0.5)===c.travelPond?shoreArc(c.travelPond,c.snake.head,p,2.2):null}),
   // kills are dragged well into the pool (≥ coil radius + 1 m inside the edge) so the coils stay wet and the prey drowns
@@ -1153,7 +1169,7 @@ const Ops={
   chooseDeepSite:mkOp('ChooseDeepSite',{start(c){c.chooseRestSite('deep')},update:()=>S}),
   chooseNightSite:mkOp('ChooseRestSite',{start(c){c.chooseRestSite('night')},update:()=>S}),
   goToRestSite:moveOp('GoToRestSite',c=>c.restSite&&c.restSite.p,0.35,{arrive:1.8,pres:'Moving',path:(c,p)=>{const rs=c.restSite;if(!rs||pondAt(c.snake.head,1.5)!==rs.o)return null;
-      const w=shoreArc(rs.o,c.snake.head,p,Math.max(2,rs.o.r-dist(p,rs.o)));if(rs.k==='bask'||rs.k==='reeds')w[w.length-1]=edgePoint(rs.o,p,1.5),w.push({...p});return w}}),
+      const w=shoreArc(rs.o,c.snake.head,p,Math.max(2,-pondGap(rs.o,p)));if(rs.k==='bask'||rs.k==='reeds')w[w.length-1]=edgePoint(rs.o,p,1.5),w.push({...p});return w}}),
   // basking and floating anacondas lie in loose loops rather than tight spirals
   bask:coilRestOp('Bask',{dry:true,r0:2.6,r1:1.6,turns:0.75,mul:0.55,pres:'Basking',minDwell:10}),
   floatShallows:coilRestOp('FloatInShallows',{r0:2.6,r1:1.6,turns:0.7,mul:0.55,wet:'rest',pres:'Floating',minDwell:10}), // in the shallows, back at the surface in the sun
@@ -1165,7 +1181,7 @@ const Ops={
   goToShade:moveOp('GoToShade',c=>{const t=nearestTree(c.snake.head);return add(t,mul(norm(sub(c.snake.head,t)),2.2))},0.4,{arrive:1.5}),
   restInShade:coilRestOp('RestInShade',{r0:2,r1:1.2,turns:1,pres:'Shade'}),
   goHome:moveOp('GoHome',c=>c.p.arboreal?add(nearestGrove(c.snake.head),mul(norm(sub(c.snake.head,nearestGrove(c.snake.head))),4)):edgePoint(c.homePond,c.snake.head,-3),0.4,{tongue:true}),
-  chooseShorePoint:mkOp('ChooseShorePoint',{start(c){const s=c.snake;let best=null;for(const o of PONDS){if(dist(o,c.home)>c.homeRange())continue;const a=Math.random()*TAU,p={x:o.x+Math.cos(a)*(o.r-1),z:o.z+Math.sin(a)*(o.r-1)};
+  chooseShorePoint:mkOp('ChooseShorePoint',{start(c){const s=c.snake;let best=null;for(const o of PONDS){if(dist(o,c.home)>c.homeRange())continue;const a=Math.random()*TAU,p=rimPt(o,a,-1);
       const sc=c.traffic(o)-dist(p,s.head)/40-1.5*c.recency(p,8)+rand(0,0.8);if(!best||sc>best.sc)best={p,o,sc}}
       if(!best){const o=nearestPond(s.head);best={p:edgePoint(o,s.head,1),o}}c.travelGoal=best.p;c.travelPond=best.o;c.logSite(best.p,'patrol')},update:()=>S}),
   travelShore:moveOp('TravelShore',c=>c.travelGoal,0.4,{tongue:true,pres:'Patrol',path:(c,p)=>c.travelPond&&pondAt(c.snake.head,0.5)===c.travelPond?shoreArc(c.travelPond,c.snake.head,p,2.2):null}),
@@ -1636,7 +1652,7 @@ class SnakeBrain{
         if(kind==='night')sc+=0.3*c.traffic(o);return sc};
       let best=null;
       for(const o of ponds)for(let i=0;i<14;i++){const a=i/14*TAU+rand(-0.2,0.2),dir=hdir(a);
-        const inset=k==='bask'||k==='reeds'?rand(0.2,0.6):k==='float'?rand(1.8,3):rand(Math.min(4,o.r*0.3),o.r*0.55),pt=add(o,mul(dir,o.r-inset));if(len(pt)>ISLAND_R-8)continue;
+        const inset=k==='bask'||k==='reeds'?rand(0.2,0.6):k==='float'?rand(1.8,3):rand(Math.min(4,o.r*0.3),o.r*0.55),pt=rimPt(o,a,-inset);if(len(pt)>ISLAND_R-8)continue;
         const sc=score(o,pt,dir,true)-1.4*c.recency(pt,3.5)+rand(0,0.4)-(kind==='night'&&dist(pt,head)<8?2:0);if(!best||sc>best.sc)best={p:pt,o,sc,k}}
       const rs=c.restSite;
       if(rs&&rs.k===k&&dist(head,rs.p)<4&&kind!=='night'){const dir=norm(sub(rs.p,rs.o)),sc0=score(rs.o,rs.p,dir,false)+0.9;if(sc0>=best.sc)best=rs} // staying put
@@ -1733,7 +1749,7 @@ class SnakeBrain{
         const carry=ripple?28:(sp<2?20:sp<4?50:100)*vibK;
         if(d<carry){
           const strength=(1-d/carry)*(ripple?1:sub_?0.6:tree?0.5:1);
-          if(now-b.feltT>1){b.feltErr=(ripple?0.06:0.15)*d;b.feltPos=add(prey.pos,randInCircle(b.feltErr));b.feltT=now;this.rippleQueue.push({p:b.feltPos,r:Math.max(1.5,b.feltErr),s:strength})}
+          if(now-b.feltT>1){b.feltErr=(ripple?0.06:0.15)*d;b.feltPos=add(prey.pos,randInCircle(b.feltErr));b.feltT=now;this.rippleQueue.push({p:b.feltPos,r:Math.max(1.5,b.feltErr),s:strength,src:prey.id})}
           if(now-b.lastSight>2){b.lastKnown=b.feltPos;b.positionError=b.feltErr;if(prey.speed>0.3&&!b.travelDir)b.travelDir=norm(prey.vel)}
           if(strength>b.confidence)b.confidence+=(strength-b.confidence)*Math.min(1,dt*3);
           b.lastVib=now;contact=true;
@@ -2005,18 +2021,27 @@ function groundY(x,z){ // gentle low-frequency relief, flattened camp, a muddy l
 const surfY=(x,z)=>Math.max(groundY(x,z),edgeAt(x,z)<0?WATER_Y:-99); // top of ground or pool water
 
 // ---- sky dome: gradient, sun glow + disc, moon disc, stars
-const skyU={top:{value:new THREE.Color()},hor:{value:new THREE.Color()},sunDir:{value:new THREE.Vector3(0,1,0)},sunCol:{value:new THREE.Color()},night:{value:0}};
+const skyU={top:{value:new THREE.Color()},hor:{value:new THREE.Color()},sunDir:{value:new THREE.Vector3(0,1,0)},sunCol:{value:new THREE.Color()},night:{value:0},cloud:{value:0.3},cloudCol:{value:new THREE.Color()},uT:U.time};
+// sky dome: gradient, sun glow + disc, moon disc, stars, and a drifting cloud layer whose cover follows the weather (overcast / rain: a grey lid)
 const skyDome=new THREE.Mesh(new THREE.SphereGeometry(1200,32,16),new THREE.ShaderMaterial({uniforms:skyU,side:THREE.BackSide,depthWrite:false,fog:false,
   vertexShader:'varying vec3 vD;void main(){vD=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-  fragmentShader:`uniform vec3 top,hor,sunDir,sunCol;uniform float night;varying vec3 vD;
+  fragmentShader:`uniform vec3 top,hor,sunDir,sunCol,cloudCol;uniform float night,cloud,uT;varying vec3 vD;
 float h3(vec3 p){p=fract(p*0.3183099+0.1);p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
+float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float n2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(h2(i),h2(i+vec2(1.0,0.0)),f.x),mix(h2(i+vec2(0.0,1.0)),h2(i+vec2(1.0,1.0)),f.x),f.y);}
+float fbm(vec2 p){float v=0.0,a=0.5;for(int i=0;i<5;i++){v+=a*n2(p);p=p*2.03+vec2(1.7,9.2);a*=0.5;}return v;}
 void main(){vec3 d=normalize(vD);float h=d.y;
  vec3 c=h>0.0?mix(hor,top,pow(clamp(h,0.0,1.0),0.5)):mix(hor,hor*0.55,clamp(-h*6.0,0.0,1.0));
  float sd=max(dot(d,sunDir),0.0);float up=smoothstep(-0.12,0.05,sunDir.y);
- c+=sunCol*(pow(sd,6.0)*0.22+pow(sd,90.0)*0.5)*up+sunCol*smoothstep(0.99955,0.9998,sd)*1.6*up;
- float md=max(dot(d,-sunDir),0.0);c+=vec3(0.86,0.9,1.0)*smoothstep(0.99965,0.99985,md)*night+vec3(0.12,0.16,0.26)*pow(md,30.0)*night;
+ float m=0.0,fb=0.5;
+ if(h>0.0){vec2 cp=d.xz/(h+0.1)*1.3+vec2(uT*0.006,uT*0.002);fb=fbm(cp);float cov=mix(0.66,0.2,cloud);m=smoothstep(cov,cov+0.2,fb)*smoothstep(0.0,0.1,h);}
+ c=mix(c,cloudCol*mix(1.0,0.82,cloud),smoothstep(0.35,0.9,cloud)*0.85); // overcast: the whole sky greys over
+ float clear=1.0-max(m,smoothstep(0.55,0.85,cloud));
+ c+=sunCol*(pow(sd,6.0)*0.22+pow(sd,90.0)*0.5)*up*(0.35+0.65*clear)+sunCol*smoothstep(0.99955,0.9998,sd)*1.6*up*clear;
+ float md=max(dot(d,-sunDir),0.0);c+=(vec3(0.86,0.9,1.0)*smoothstep(0.99965,0.99985,md)+vec3(0.12,0.16,0.26)*pow(md,30.0))*night*clear;
  if(night>0.01&&h>0.0){vec3 q=d*260.0;vec3 id=floor(q);float r=h3(id);vec3 f=fract(q)-0.5;
-  c+=vec3(0.9,0.93,1.0)*step(0.982,r)*smoothstep(0.3,0.0,length(f))*night*smoothstep(0.0,0.2,h)*(0.35+0.65*h3(id+7.0));}
+  c+=vec3(0.9,0.93,1.0)*step(0.982,r)*smoothstep(0.3,0.0,length(f))*night*smoothstep(0.0,0.2,h)*(0.35+0.65*h3(id+7.0))*clear;}
+ vec3 cc=cloudCol*(0.78+0.4*fb)+sunCol*pow(sd,3.0)*0.3*up*(1.0-cloud);c=mix(c,cc,m*0.92);
  gl_FragColor=vec4(c,1.0);}`}));
 skyDome.renderOrder=-10;skyDome.frustumCulled=false;scene.add(skyDome);
 
@@ -2051,7 +2076,7 @@ let terrain;
     geos.push(mkGeo(P,N,Cl,I))}
   PONDS.forEach(o=>{const P=[],N=[],Cl=[],I=[],seg=Math.round(o.r*9),radii=[0];
     for(let k=1;k<=6;k++)radii.push((o.r-4.5)*k/6);for(let r=o.r-4.2;r<o.r+3.5;r+=0.3)radii.push(r);
-    const rows=radii.map(r=>{const row=[],m=r===0?1:seg;for(let s=0;s<m;s++){const a=s/seg*TAU,x=o.x+Math.cos(a)*r,z=o.z+Math.sin(a)*r;row.push(P.length/3);vert(P,N,Cl,x,z,-0.03*sstep(1.0,1.6,r-o.r))}return row});
+    const rows=radii.map(r=>{const row=[],m=r===0?1:seg;for(let s=0;s<m;s++){const a=s/seg*TAU,rr=r+shoreOff(o,a)*clamp(r/(o.r-4.5),0,1),x=o.x+Math.cos(a)*rr,z=o.z+Math.sin(a)*rr;row.push(P.length/3);vert(P,N,Cl,x,z,-0.03*sstep(1.0,1.6,r-o.r))}return row});
     for(let k=0;k<rows.length-1;k++){const A=rows[k],B=rows[k+1];for(let s=0;s<seg;s++){const s1=(s+1)%seg;if(A.length===1)I.push(A[0],B[s1],B[s]);else I.push(A[s],A[s1],B[s],A[s1],B[s1],B[s])}}
     geos.push(mkGeo(P,N,Cl,I))});
   const mat=new THREE.MeshLambertMaterial({vertexColors:true});
@@ -2066,29 +2091,35 @@ float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hh(
 }
 
 // ---- water: animated normals (four travelling waves), depth tint + opacity, fresnel sky reflection
+const WEATHER_U={rain:{value:0},night:{value:0}};
 function waterMaterial(o){
   const m=new THREE.MeshPhongMaterial({color:0xffffff,specular:o.spec,shininess:o.shine,transparent:true,depthWrite:false});
-  const u={uTime:U.time,uSky:{value:new THREE.Color()},uShallow:{value:lin(o.shallow)},uDeep:{value:lin(o.deep)},uAmp:{value:o.amp},uScale:{value:o.scale},uA0:{value:o.a0},uA1:{value:o.a1},uDd:{value:o.dd}};
+  const u={uTime:U.time,uRain:WEATHER_U.rain,uNightK:WEATHER_U.night,uSky:{value:new THREE.Color()},uShallow:{value:lin(o.shallow)},uDeep:{value:lin(o.deep)},uAmp:{value:o.amp},uScale:{value:o.scale},uA0:{value:o.a0},uA1:{value:o.a1},uDd:{value:o.dd}};
   m.userData.u=u;m.userData.spec=m.specular.clone();m.userData.shine=o.shine;
   m.onBeforeCompile=sh=>{Object.assign(sh.uniforms,u);
     sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aDepth;varying float vDepth;varying vec3 vWP;')
       .replace('#include <project_vertex>','#include <project_vertex>\nvDepth=aDepth;vWP=(modelMatrix*vec4(transformed,1.0)).xyz;');
     sh.fragmentShader=sh.fragmentShader.replace('#include <common>',`#include <common>
-uniform float uTime,uAmp,uScale,uA0,uA1,uDd;uniform vec3 uSky,uShallow,uDeep;varying float vDepth;varying vec3 vWP;
+uniform float uTime,uAmp,uScale,uA0,uA1,uDd,uRain,uNightK;uniform vec3 uSky,uShallow,uDeep;varying float vDepth;varying vec3 vWP;
 vec2 wv(vec2 p,vec2 d,float k,float w,float a){return d*(cos(dot(p,d)*k+uTime*w)*k*a);}`)
       .replace('#include <color_fragment>','#include <color_fragment>\nfloat dk=smoothstep(0.0,uDd,vDepth);diffuseColor.rgb=mix(uShallow,uDeep,dk);diffuseColor.a=mix(uA0,uA1,dk);')
       .replace('#include <normal_fragment_begin>',`#include <normal_fragment_begin>
 vec2 P=vWP.xz*uScale;float fd=length(cameraPosition-vWP)*uScale;float f1=exp(-fd/90.0),f2=exp(-fd/40.0),f3=exp(-fd/18.0);
 vec2 gr=wv(P,vec2(0.8,0.6),1.3,1.1,0.025)*f1+wv(P,vec2(-0.5,0.866),2.3,1.7,0.022)*f1+wv(P,vec2(0.6,-0.8),1.7,1.3,0.02)*f1+wv(P,vec2(0.96,-0.28),3.9,2.6,0.016)*f2+wv(P,vec2(-0.2,-0.98),7.1,3.6,0.009)*f3+wv(P,vec2(-0.93,0.37),5.3,3.1,0.01)*f3;
+if(uRain>0.01&&f2>0.05){vec2 rp=vWP.xz*1.6;for(int L=0;L<2;L++){vec2 cl=floor(rp),fq=fract(rp)-0.5;float hs=fract(sin(dot(cl,vec2(12.9898,78.233)))*43758.5453);
+  vec2 dv=fq-(vec2(fract(hs*7.31),fract(hs*13.17))-0.5)*0.4;float ph=fract(uTime*(0.8+0.4*hs)+hs*9.0),rr=ph*0.45,dd=length(dv),x=dd-rr;
+  gr+=dv/(dd+1e-3)*sin(x*55.0)*exp(-x*x*300.0)*(1.0-ph)*uRain*0.45*f2;rp=rp*1.37+vec2(3.1,7.7);}} // rain rings
 vec3 nW=normalize(vec3(-gr.x*uAmp,1.0,-gr.y*uAmp));normal=normalize((viewMatrix*vec4(nW,0.0)).xyz);`)
+      .replace('#include <aomap_fragment>',`#include <aomap_fragment>
+{vec3 V0=normalize(cameraPosition-vWP);float frs=pow(1.0-clamp(dot(V0,nW),0.0,1.0),4.0);reflectedLight.directSpecular*=mix(1.0,0.15+3.0*frs,uNightK);} // at night the moon glints only at grazing angles`)
       .replace('gl_FragColor = vec4( outgoingLight, diffuseColor.a );',`vec3 Vw=normalize(cameraPosition-vWP);float fr=0.02+0.98*pow(1.0-clamp(dot(Vw,nW),0.0,1.0),5.0);
 outgoingLight=mix(outgoingLight,uSky,fr*0.65);gl_FragColor=vec4(outgoingLight,mix(diffuseColor.a,1.0,fr*0.6));`);
   };
   return m;
 }
-function discGeo(cx,cz,radii,seg,depthFn){ // polar grid (radii ascending; radii[0]=0 gives a centre point)
+function discGeo(cx,cz,radii,seg,depthFn,rf){ // polar grid (radii ascending; radii[0]=0 gives a centre point); rf(r,a) bends the rings to a shoreline
   const P=[],D=[],I=[];const rows=[];
-  for(const r of radii){const row=[];const m=r===0?1:seg;for(let s=0;s<m;s++){const a=s/seg*TAU,x=cx+Math.cos(a)*r,z=cz+Math.sin(a)*r;row.push(P.length/3);P.push(x,0,z);D.push(depthFn(x,z))}rows.push(row)}
+  for(const r of radii){const row=[];const m=r===0?1:seg;for(let s=0;s<m;s++){const a=s/seg*TAU,rr=rf?rf(r,a):r,x=cx+Math.cos(a)*rr,z=cz+Math.sin(a)*rr;row.push(P.length/3);P.push(x,0,z);D.push(depthFn(x,z))}rows.push(row)}
   for(let k=0;k<rows.length-1;k++){const A=rows[k],B=rows[k+1];
     for(let s=0;s<seg;s++){const s1=(s+1)%seg;if(A.length===1){I.push(A[0],B[s1],B[s])}else{I.push(A[s],A[s1],B[s],A[s1],B[s1],B[s])}}}
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('aDepth',new THREE.Float32BufferAttribute(D,1));
@@ -2098,10 +2129,20 @@ const pondMat=waterMaterial({shallow:0x6f7444,deep:0x1d3833,a0:0.22,a1:0.8,dd:1.
 const seaMat=waterMaterial({shallow:0x5aa6a0,deep:0x173c50,a0:0.25,a1:0.93,dd:2.2,amp:1.0,scale:0.45,spec:0x2c3438,shine:110});
 const waterMats=[pondMat,seaMat];
 PONDS.forEach(o=>{const radii=[0];for(let k=1;k<=12;k++)radii.push(o.r*k/12);radii.push(o.r+0.5,o.r+1.3);
-  const w=new THREE.Mesh(discGeo(o.x,o.z,radii,72,(x,z)=>Math.max(0,WATER_Y-groundY(x,z))),pondMat);w.position.y=WATER_Y;w.renderOrder=2;scene.add(w)});
+  const w=new THREE.Mesh(discGeo(o.x,o.z,radii,96,(x,z)=>Math.max(0,WATER_Y-groundY(x,z)),(r,a)=>r+shoreOff(o,a)*Math.min(1,r/o.r)),pondMat);w.position.y=WATER_Y;w.renderOrder=2;scene.add(w)});
 {const radii=[];for(let r=118;r<=162;r+=2)radii.push(r);radii.push(172,186,210,250,320,450,700,1100);
   const sea=new THREE.Mesh(discGeo(0,0,radii,160,(x,z)=>Math.max(0,SEA_Y-groundY(x,z))),seaMat);sea.position.y=SEA_Y;sea.renderOrder=1;scene.add(sea)}
 
+// ---- rain: falling streaks in a box that travels with the camera (one draw call; the shader wraps them round the camera)
+const RAIN={};{const n=4500,P=new Float32Array(n*6),E=new Float32Array(n*2);for(let i=0;i<n;i++){const x=Math.random()*70,y=Math.random()*34,z=Math.random()*70;P.set([x,y,z,x,y,z],i*6);E[i*2]=0;E[i*2+1]=1}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(P,3));g.setAttribute('aEnd',new THREE.BufferAttribute(E,1));
+  RAIN.u={uT:U.time,uCam:{value:new THREE.Vector3()},uA:{value:0},uCol:{value:new THREE.Color(0.75,0.8,0.85)}};
+  RAIN.mesh=new THREE.LineSegments(g,new THREE.ShaderMaterial({uniforms:RAIN.u,transparent:true,depthWrite:false,fog:false,
+    vertexShader:`uniform vec3 uCam;uniform float uT;attribute float aEnd;varying float vA;
+void main(){vec3 p=position;float y=mod(p.y-uT*16.0,34.0);vec3 w=vec3(uCam.x+mod(p.x-uCam.x,70.0)-35.0,uCam.y-14.0+y,uCam.z+mod(p.z-uCam.z,70.0)-35.0);
+ w+=vec3(0.12,0.62,0.05)*aEnd;vA=(0.35+0.65*aEnd)*smoothstep(0.0,3.0,y)*smoothstep(34.0,28.0,y);gl_Position=projectionMatrix*viewMatrix*vec4(w,1.0);}`,
+    fragmentShader:`uniform float uA;uniform vec3 uCol;varying float vA;void main(){gl_FragColor=vec4(uCol,uA*vA);}`}));
+  RAIN.mesh.frustumCulled=false;RAIN.mesh.renderOrder=7;RAIN.mesh.visible=false;scene.add(RAIN.mesh)}
 // ---- vegetation helpers: curved blade strips with a base->tip colour ramp; wind sway + both faces lit like the front
 function bladeGeo(blades){ // blades: [{x,z,a,h,w,bend,segs,c0,c1}]
   const P=[],N=[],C=[];
@@ -2112,16 +2153,31 @@ function bladeGeo(blades){ // blades: [{x,z,a,h,w,bend,segs,c0,c1}]
       for(const [v,cc] of [[a0,ca],[a1,ca],[b0,cb],[a1,ca],[b1,cb],[b0,cb]]){P.push(...v);N.push(-dx*0.45/nl,1/nl,-dz*0.45/nl);C.push(cc.r,cc.g,cc.b)}}}
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));g.setAttribute('color',new THREE.Float32BufferAttribute(C,3));return g;
 }
+// both snakes' spines (24 points each: x,y,z,radius) and bounding circles, so grass and reeds bend away from and under the bodies
+const VEG={pts:{value:Array.from({length:48},()=>new THREE.Vector4(0,-99,0,0))},box:{value:[new THREE.Vector4(0,0,0,-1),new THREE.Vector4(0,0,0,-1)]}};
+function updateVegPush(){world.snakes.slice(0,2).forEach((b,si)=>{const R=b.R,B=VEG.box.value[si];if(!R||b.gone){B.w=-1;return}
+  let cx=0,cz=0;for(let k=0;k<24;k++){const i=Math.round(k*(R.N-1)/23),q=VEG.pts.value[si*24+k];q.set(R.px[i],R.py[i],R.pz[i],R.rr[i]);cx+=q.x;cz+=q.z}cx/=24;cz/=24;
+  let rmax=0;for(let k=0;k<24;k++){const q=VEG.pts.value[si*24+k];rmax=Math.max(rmax,Math.hypot(q.x-cx,q.z-cz))}B.set(cx,0,cz,rmax+2)});if(world.snakes.length<2)VEG.box.value[1].w=-1}
 function windMat(amp,extra){
   const m=new THREE.MeshLambertMaterial(Object.assign({vertexColors:true,side:THREE.DoubleSide},extra||{}));
-  m.onBeforeCompile=sh=>{sh.uniforms.uTime=U.time;
-    sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nuniform float uTime;').replace('#include <begin_vertex>',`#include <begin_vertex>
+  m.onBeforeCompile=sh=>{sh.uniforms.uTime=U.time;sh.uniforms.uSnk=VEG.pts;sh.uniforms.uSnkB=VEG.box;
+    sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nuniform float uTime;uniform vec4 uSnk[48];uniform vec4 uSnkB[2];').replace('#include <begin_vertex>',`#include <begin_vertex>
 {float hh=max(transformed.y,0.0);vec3 ip=vec3(0.0);vec3 wl=vec3(1.0,0.0,0.35);
 #ifdef USE_INSTANCING
 ip=instanceMatrix[3].xyz;wl=(vec4(wl,0.0)*instanceMatrix).xyz/dot(instanceMatrix[0].xyz,instanceMatrix[0].xyz);
 #endif
 float ph=uTime*1.7+ip.x*0.23+ip.z*0.19;float gu=0.55+0.45*sin(uTime*0.37+ip.x*0.05+ip.z*0.03);
-float sw=(sin(ph)*0.6+0.4*sin(ph*2.7+1.3))*gu*${amp.toFixed(3)}*hh*hh;transformed.xz+=wl.xz*sw;transformed.y-=abs(sw)*0.3*hh;}`);
+float sw=(sin(ph)*0.6+0.4*sin(ph*2.7+1.3))*gu*${amp.toFixed(3)}*hh*hh;transformed.xz+=wl.xz*sw;transformed.y-=abs(sw)*0.3*hh;
+#ifdef USE_INSTANCING
+vec2 wq=(instanceMatrix*vec4(transformed,1.0)).xz;vec2 push=vec2(0.0);float fl=0.0;
+for(int s=0;s<2;s++){vec4 B=uSnkB[s];if(B.w<0.0)continue;vec2 db=wq-B.xz;if(dot(db,db)>B.w*B.w)continue;
+ for(int k=0;k<23;k++){vec4 a=uSnk[s*24+k],b=uSnk[s*24+k+1];vec2 ab=b.xz-a.xz;float t=clamp(dot(wq-a.xz,ab)/max(dot(ab,ab),1e-4),0.0,1.0);
+  float r=mix(a.w,b.w,t),yb=mix(a.y,b.y,t);if(yb-r-ip.y>1.0)continue;vec2 dv=wq-(a.xz+ab*t);float d=length(dv),R2=r+0.45;
+  if(d<R2){float k2=1.0-smoothstep(r*0.5,R2,d);fl=max(fl,k2);push+=dv/(d+1e-3)*k2*(R2-d);}}}
+if(fl>0.0){float sc2=dot(instanceMatrix[0].xyz,instanceMatrix[0].xyz);vec3 wd=vec3(push.x,0.0,push.y)*hh*0.9;wd.y=-fl*0.8*hh*sqrt(sc2);
+ transformed+=(vec4(wd,0.0)*instanceMatrix).xyz/sc2;} // pressed down and pushed aside by a snake's body
+#endif
+}`);
     sh.fragmentShader=sh.fragmentShader.replace('( gl_FrontFacing ) ? vIndirectFront : vIndirectBack','vIndirectFront').replace('( gl_FrontFacing ) ? vLightFront : vLightBack','vLightFront');
   };
   return m;
@@ -2155,7 +2211,7 @@ const blocked=(p,pad)=>dist(p,CAMP)<9+pad||TERMINALS.some(t=>dist(t,p)<2.5+pad)|
   const geo=bladeGeo(bl);{ // lift the cattail heads onto their stems
     const p=geo.attributes.position;let v=0;for(const b of bl){const nv=b.segs*6;if(b.y0)for(let q=v;q<v+nv;q++)p.setY(q,p.getY(q)+b.y0);v+=nv}}
   const spots=[];PONDS.forEach(o=>{const arcs=2+Math.floor(vr()*2);for(let k=0;k<arcs;k++){const a0=vr()*TAU,span=vrand(0.5,1.1),n=Math.round(o.r*span*2.4);
-    for(let q=0;q<n;q++){const a=a0+vrand(-span/2,span/2),e=vrand(-1.6,0.5),p={x:o.x+Math.cos(a)*(o.r+e),z:o.z+Math.sin(a)*(o.r+e)};if(dist(p,o.bask)<4)continue;spots.push(p)}}});
+    for(let q=0;q<n;q++){const a=a0+vrand(-span/2,span/2),e=vrand(-1.6,0.5),p=rimPt(o,a,e);if(dist(p,o.bask)<4)continue;spots.push(p)}}});
   const im=new THREE.InstancedMesh(geo,windMat(0.09),spots.length);
   spots.forEach((p,i)=>{const s=vrand(0.75,1.2);placeInst(im,i,p.x,groundY(p.x,p.z)-0.05,p.z,vr()*TAU,s,s*vrand(0.85,1.15),s);im.setColorAt(i,_c4.setHSL(vrand(0.14,0.2),0.4,vrand(0.5,0.6)).convertSRGBToLinear().multiplyScalar(1.8))});
   im.receiveShadow=true;im.castShadow=true;scene.add(im);
@@ -2175,13 +2231,15 @@ const GROVE_CROWN={};
   const trunkGeo=new THREE.CylinderGeometry(0.2,0.36,1,7);trunkGeo.translate(0,0.5,0);
   const coneGeo=new THREE.ConeGeometry(1,1,8);coneGeo.translate(0,0.5,0);
   const blobs=[],trunks=[],cones=[];
-  const limbs=[],gblobs=[];
+  const limbs=[],gblobs=[],twigs=[],groveTrunks=[];
   TREES.forEach(t=>{const gy=groundY(t.x,t.z)-0.15,spruce=vr()<0.32;
-    if(t.big){ // grove tree: thick buttressed trunk, a few thick limbs (the snake's roads), a high broad crown
-      trunks.push([t.x,gy,t.z,2.75,t.h*0.95+0.15,lin(0x5b4a3a)]);for(const l of t.limbs)limbs.push(l);
-      const cr=t.crown;gblobs.push([t.x,gy+t.h+0.4,t.z,cr*0.8,0.31]);
-      for(let k=0;k<6;k++){const a=k/6*TAU+vr()*0.6,rr=cr*vrand(0.5,0.8);gblobs.push([t.x+Math.cos(a)*rr,gy+t.h+vrand(-0.2,0.6)*cr*0.5,t.z+Math.sin(a)*rr,cr*vrand(0.45,0.62),vrand(0.27,0.33)])}
-      return}
+    if(t.big){ // grove tree (kapok-like): buttressed trunk with ridged bark (own mesh below), thick limbs (the snake's roads), a high, broad, flat-topped crown
+      const gy0=groundY(t.x,t.z);for(const l of t.limbs){limbs.push(l);const tx=l.tip.x+l.dir.x*0.7,tz=l.tip.z+l.dir.z*0.7,ty=groundY(l.tip.x,l.tip.z)+l.y1;
+        gblobs.push([tx,ty+1.25,tz,vrand(1.0,1.3),vrand(0.27,0.33),0.6]);twigs.push([l.tip.x-l.dir.x*0.4,ty,l.tip.z-l.dir.z*0.4,tx,ty+1.0,tz,0.09])} // a leafy spray over each limb tip
+      const cr=t.crown*1.3,cy=gy0+t.h+0.2;gblobs.push([t.x,cy+0.5,t.z,cr*0.72,0.31,0.5]);
+      for(let k=0;k<8;k++){const a=k/8*TAU+vr()*0.5,rr=cr*vrand(0.55,0.85),x=t.x+Math.cos(a)*rr,z=t.z+Math.sin(a)*rr;gblobs.push([x,cy+vrand(-0.5,0.4),z,cr*vrand(0.4,0.52),vrand(0.27,0.33),vrand(0.5,0.62)]);
+        twigs.push([t.x,gy0+t.h*vrand(0.66,0.8),t.z,lerp(t.x,x,0.8),cy-0.4,lerp(t.z,z,0.8),vrand(0.16,0.22)])} // scaffold branches up into the crown
+      groveTrunks.push(t);return}
     if(spruce){const H=t.h*1.25;trunks.push([t.x,gy,t.z,0.8,H*0.9,lin(0x4a3a2c)]);const R=t.crown*0.62;
       for(let k=0;k<4;k++){const f=k/4;cones.push([t.x,gy+H*(0.18+f*0.2),t.z,R*(1-f*0.62),H*(0.5-f*0.06),vr()*TAU])}}
     else{const birch=vr()<0.25;trunks.push([t.x,gy,t.z,birch?0.7:1,t.h*0.92,birch?lin(0xd9d3c4):lin(0x5a4636)]);
@@ -2189,11 +2247,33 @@ const GROVE_CROWN={};
       for(let k=0;k<n;k++){const a=vr()*TAU,rr=cr*vrand(0.35,0.7);blobs.push([t.x+Math.cos(a)*rr,gy+t.h+vrand(-0.45,0.4)*cr,t.z+Math.sin(a)*rr,cr*vrand(0.5,0.72),birch?0.25:vrand(0.27,0.33)])}}});
   const shrubs=[];let guard=0;while(shrubs.length<70&&guard++<4000){const p=randInCircle(132);if(edgeAt(p.x,p.z)<2.5||blocked(p,3))continue;shrubs.push(p)}
   shrubs.forEach(p=>{const gy=groundY(p.x,p.z);const n=2+Math.floor(vr()*2);for(let k=0;k<n;k++){const q=add(p,randInCircle(0.8)),s=vrand(0.45,0.85);blobs.push([q.x,gy+s*0.55,q.z,s,vrand(0.24,0.29)])}});
-  const limbGeo=new THREE.CylinderGeometry(limbR(1),limbR(0),1,8);limbGeo.translate(0,0.5,0); // tip radius at +y
-  const limbM=new THREE.InstancedMesh(limbGeo,new THREE.MeshLambertMaterial({color:lin(0x5b4a3a)}),limbs.length),up=new THREE.Vector3(0,1,0),dv=new THREE.Vector3();
+  // bark in vertex colours: grey-brown with vertical ridges and furrows, moss low on the shady side
+  const BK={a:lin(0x75685a),b:lin(0x4a3e33),c:lin(0x938572),moss:lin(0x4f5d2a)},bc=new THREE.Color();
+  const hsh=x=>{const v=Math.sin(x)*43758.5453;return v-Math.floor(v)},barkCol=(th,y,k)=>{const rid=Math.sin(th*11+Math.sin(y*0.9+k)*0.9),n=hsh(Math.floor(th*18)*3.1+Math.floor(y*2.5)*7.7+k);bc.copy(BK.a).lerp(BK.b,sstep(0.2,0.9,-rid)*0.7).lerp(BK.c,sstep(0.55,1,rid)*0.35);bc.multiplyScalar(0.88+0.2*n);
+    if(y<3.2)bc.lerp(BK.moss,0.55*(1-y/3.2)*sstep(0,0.8,-Math.sin(th))*(0.6+0.4*n));return bc};
+  {const P=[],C=[],I=[],NR=26;
+    groveTrunks.forEach(t=>{const gy=groundY(t.x,t.z),H=t.h*0.95+0.2,fins=[];for(let k=0;k<5;k++)fins.push({a:t.gi*1.7+k/5*TAU+vrand(-0.25,0.25),l:vrand(1.0,1.6),h:vrand(1.6,2.4)});
+      const ys=[-0.4,0,0.15,0.35,0.6,0.9,1.3,1.8,2.4,3.2,4.2,5.4,6.8,8.4,10,11.6,H];const base=P.length/3;
+      ys.forEach((y,j)=>{for(let i=0;i<=NR;i++){const th=i/NR*TAU;let r=trunkR(t,Math.max(0,y))*(1+0.035*Math.sin(th*11+y*0.5));
+        for(const f of fins){const da=wrapA(th-f.a);r+=f.l*Math.exp(-da*da/0.022)*Math.pow(clamp(1-Math.max(0,y)/f.h,0,1),1.6)}
+        r+=0.25*Math.exp(-Math.max(0,y)/0.5); // root flare
+        P.push(t.x+Math.cos(th)*r,gy+y,t.z+Math.sin(th)*r);const cc=barkCol(th,y,t.gi);if(y<0.6)cc.multiplyScalar(0.8+0.2*y/0.6);C.push(cc.r,cc.g,cc.b)}
+        if(j>0)for(let i=0;i<NR;i++){const a=base+(j-1)*(NR+1)+i,b=a+NR+1;I.push(a,b,a+1,a+1,b,b+1)}});
+      const top=P.length/3;P.push(t.x,gy+H+0.15,t.z);C.push(BK.b.r,BK.b.g,BK.b.b);const lr=base+(ys.length-1)*(NR+1);for(let i=0;i<NR;i++)I.push(lr+i,top,lr+i+1)});
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('color',new THREE.Float32BufferAttribute(C,3));g.setIndex(I);g.computeVertexNormals();
+    const m=new THREE.Mesh(g,new THREE.MeshLambertMaterial({vertexColors:true}));m.castShadow=m.receiveShadow=true;scene.add(m)}
+  // limbs: tapered, bark-coloured, with a swollen collar where they leave the trunk
+  const limbGeo=(()=>{const NR=10,VS=[0,0.1,0.14,0.18,0.22,0.27,0.35,0.5,0.65,0.8,0.92,1],NL=VS.length-1,P=[],C=[],I=[];for(let j=0;j<=NL;j++){const v=VS[j],r=lerp(limbR(0),limbR(1),v)*(1+0.42*Math.exp(-Math.pow((v-0.17)/0.06,2)));for(let i=0;i<=NR;i++){const th=i/NR*TAU;P.push(Math.cos(th)*r,v,Math.sin(th)*r);const cc=barkCol(th,v*6+3.5,j*0.37);C.push(cc.r,cc.g,cc.b)}
+    if(j>0)for(let i=0;i<NR;i++){const a=(j-1)*(NR+1)+i,b=a+NR+1;I.push(a,a+1,b,a+1,b+1,b)}}
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('color',new THREE.Float32BufferAttribute(C,3));g.setIndex(I);g.computeVertexNormals();return g})();
+  const limbM=new THREE.InstancedMesh(limbGeo,new THREE.MeshLambertMaterial({vertexColors:true}),limbs.length),up=new THREE.Vector3(0,1,0),dv=new THREE.Vector3();
   limbs.forEach((l,i)=>{const gy=groundY(l.tree.x,l.tree.z),x0=l.tree.x,z0=l.tree.z,y0=gy+l.y0,x1=l.tip.x,z1=l.tip.z,y1=groundY(x1,z1)+l.y1;dv.set(x1-x0,y1-y0,z1-z0);const L=dv.length();
     _q4.setFromUnitVectors(up,dv.normalize());limbM.setMatrixAt(i,_m4.compose(_v4.set(x0,y0,z0),_q4,_s4.set(1,L,1)))});
   limbM.castShadow=limbM.receiveShadow=true;scene.add(limbM);
+  const twigGeo=new THREE.CylinderGeometry(0.45,1,1,6);twigGeo.translate(0,0.5,0);
+  const twM=new THREE.InstancedMesh(twigGeo,new THREE.MeshLambertMaterial({color:lin(0x5e5042)}),twigs.length);
+  twigs.forEach((w,i)=>{dv.set(w[3]-w[0],w[4]-w[1],w[5]-w[2]);const L=dv.length();_q4.setFromUnitVectors(up,dv.normalize());twM.setMatrixAt(i,_m4.compose(_v4.set(w[0],w[1],w[2]),_q4,_s4.set(w[6],L,w[6])))});
+  twM.castShadow=true;scene.add(twM);
   const trunk=new THREE.InstancedMesh(trunkGeo,new THREE.MeshLambertMaterial({color:0xffffff}),trunks.length);
   trunks.forEach((t,i)=>{placeInst(trunk,i,t[0],t[1],t[2],vr()*TAU,t[3],t[4],t[3]);trunk.setColorAt(i,t[5])});
   const crownMat=new THREE.MeshStandardMaterial({color:0xffffff,flatShading:true,roughness:0.92,metalness:0});
@@ -2202,7 +2282,7 @@ const GROVE_CROWN={};
   // grove crowns fade while the selected snake is up a tree, so it can be watched from above
   GROVE_CROWN.mat=new THREE.MeshStandardMaterial({color:0xffffff,flatShading:true,roughness:0.92,metalness:0,transparent:true,opacity:1});
   const gcr=new THREE.InstancedMesh(blob,GROVE_CROWN.mat,gblobs.length);
-  gblobs.forEach((b,i)=>{placeInst(gcr,i,b[0],b[1],b[2],vr()*TAU,b[3],b[3]*vrand(0.8,1),b[3]);gcr.setColorAt(i,_c4.setHSL(b[4],vrand(0.38,0.55),vrand(0.2,0.3)).convertSRGBToLinear())});
+  gblobs.forEach((b,i)=>{placeInst(gcr,i,b[0],b[1],b[2],vr()*TAU,b[3],b[3]*(b[5]||1)*vrand(0.85,1),b[3]);gcr.setColorAt(i,_c4.setHSL(b[4],vrand(0.38,0.55),vrand(0.2,0.3)).convertSRGBToLinear())});
   gcr.castShadow=gcr.receiveShadow=true;scene.add(gcr);GROVE_CROWN.mesh=gcr;
   const spr=new THREE.InstancedMesh(coneGeo,crownMat,cones.length);
   cones.forEach((c,i)=>{placeInst(spr,i,c[0],c[1],c[2],c[5],c[3],c[4],c[3]);spr.setColorAt(i,_c4.setHSL(vrand(0.36,0.42),vrand(0.25,0.4),vrand(0.2,0.26)).convertSRGBToLinear())});
@@ -2236,19 +2316,21 @@ const FIRE={};
    tapering to a pointed tail, anaconda pattern in vertex colours), a sculpted head with a hinged jaw, eyes and nostrils
    on top, a post-ocular stripe and a forked tongue. Render-time travelling-wave undulation, water posture, stacking where
    the body crosses itself, constriction loops around the prey, swallowing + digestion bulge, ripples / wake / bubbles. */
-const snakeMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.46,metalness:0});
-const COLG={dors:lin(0x4b5824),side:lin(0x6f7230),belly:lin(0xcdb65a),black:lin(0x15130b),core:lin(0xd8962a),cream:lin(0xc6ae58),pink:lin(0x9a4a48),stripeO:lin(0xcf8a2c),crown:lin(0x434f1f)};
-const COLT={dors:lin(0x5c6a2a),side:lin(0x7f7c3a),belly:lin(0xcab45c),black:lin(0x1c170c),core:lin(0xc99a3a),cream:lin(0xc4b062),pink:lin(0x9a4a48),stripeO:lin(0xc89238),crown:lin(0x515d24)}; // tree anaconda: lighter olive-yellow
+const snakeHeadMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.66,metalness:0}); // the head is matte (dry scales do not glint like the wet body)
+const COLG={dors:lin(0x4b5824),side:lin(0x6f7230),belly:lin(0xcdb65a),black:lin(0x15130b),core:lin(0xd8962a),cream:lin(0xc6ae58),pink:lin(0x9a4a48),stripeO:lin(0xcf8a2c),crown:lin(0x3a4419)};
+const COLT={dors:lin(0x5c6a2a),side:lin(0x7f7c3a),belly:lin(0xcab45c),black:lin(0x1c170c),core:lin(0xc99a3a),cream:lin(0xc4b062),pink:lin(0x9a4a48),stripeO:lin(0xc89238),crown:lin(0x46511f)}; // tree anaconda: lighter olive-yellow
 const hash=x=>{const v=Math.sin(x)*43758.5453;return v-Math.floor(v)};
 const wrapPi=a=>{a=(a+Math.PI)%TAU;if(a<0)a+=TAU;return a-Math.PI};
-function bodyColour(pat,s,th,L,out,COL){ // th: 0 right flank, π/2 spine, π left flank, 3π/2 belly
+const PAT_BK=0.25; // pattern elements are bucketed by arc length (m) so the texture bake only tests the nearby ones
+function bodyColour(pat,s,th,L,out,COL){ // s: rest arc length from the snout (m); th: 0 right flank, π/2 spine, π left flank, 3π/2 belly
   const sn=Math.sin(th);
   if(sn>=0)out.copy(COL.side).lerp(COL.dors,Math.pow(sn,0.6));else out.copy(COL.side).lerp(COL.belly,sstep(0.1,0.5,-sn));
-  let ink=0,core=0;
-  for(const d of pat.dors){const u=(s-d.s)/d.ls;if(u>1||u<-1)continue;const v=wrapPi(th-d.th)/d.lt,q=u*u+v*v;if(q<1)ink=Math.max(ink,sstep(1,0.7,q))}
-  for(const o of pat.lat){const u=(s-o.s)/o.ls;if(u>1||u<-1)continue;const v=wrapPi(th-o.th)/o.rad,q=Math.sqrt(u*u+v*v);if(q<1){ink=Math.max(ink,sstep(1,0.82,q));core=Math.max(core,sstep(0.56,0.4,q))}}
-  for(const b of pat.bel){const u=(s-b.s)/b.ls;if(u>1||u<-1)continue;const v=wrapPi(th-b.th)/b.rad,q=u*u+v*v;if(q<1)ink=Math.max(ink,sstep(1,0.6,q))}
-  out.multiplyScalar(0.9+0.2*hash(s*13.17+th*7.31));
+  let ink=0,core=0;const bk=pat.bk[Math.floor(s/PAT_BK)];
+  if(bk)for(const d of bk){const u=(s-d.s)/d.ls;if(u>1||u<-1)continue;
+    if(d.k===0){const v=wrapPi(th-d.th)/d.lt,q=u*u+v*v;if(q<1)ink=Math.max(ink,sstep(1,0.62,q))}
+    else if(d.k===1){const v=wrapPi(th-d.th)/d.rad,q=Math.sqrt(u*u+v*v);if(q<1){ink=Math.max(ink,sstep(1,0.86,q));core=Math.max(core,sstep(0.62,0.46,q))}}
+    else{const v=wrapPi(th-d.th)/d.rad,q=u*u+v*v;if(q<1)ink=Math.max(ink,sstep(1,0.6,q))}}
+  out.multiplyScalar(0.93+0.14*hash(Math.floor(s*22)*13.17+Math.floor(th*9)*7.31)); // a scale-sized grain
   if(ink>0)out.lerp(COL.black,ink);if(core>0)out.lerp(COL.core,core);
   if(s>0.85*L)out.multiplyScalar(lerp(1,0.78,(s-0.85*L)/(0.15*L)));
 }
@@ -2259,28 +2341,36 @@ function loft(nu,nt,posFn,colFn){ // a closed-around, open-ended surface of revo
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('color',new THREE.BufferAttribute(col,3));g.setIndex(idx);g.computeVertexNormals();return g;
 }
 let SR=null; // render state of the selected snake (each brain keeps its own in brain.R)
-function disposeSnakeMesh(R){if(!R)return;scene.remove(R.mesh);scene.remove(R.head);scene.remove(R.ring);R.mesh.geometry.dispose();R.head.traverse(o=>{if(o.geometry)o.geometry.dispose()});R.label.remove()}
+function disposeSnakeMesh(R){if(!R)return;scene.remove(R.mesh,R.head,R.ring,R.men);R.mesh.geometry.dispose();R.mat.map.dispose();R.mat.dispose();R.head.traverse(o=>{if(o.geometry)o.geometry.dispose()});R.label.remove()}
 function buildSnakeMesh(p){
   const COL=p.pal==='tree'?COLT:COLG;
-  const L=(p.segs-1)*p.spacing,N=p.sizeClass==='giant'?180:130,M=16,ds=L/(N-1);
+  const L=(p.segs-1)*p.spacing,N=p.sizeClass==='giant'?180:130,M=20,M1=M+1,ds=L/(N-1);
   const rm=0.78*p.size,rn=0.6*rm,hw=1.2*rn,hl=3.3*hw,xt=p.size,xb=xt-hl,hb=-xb; // head ~1.2x neck width; snout tip just past the sim mouth point
   const profAt=s=>{if(s<hb)return 0.55*rm;let f=0.6+0.4*sstep(hb,0.38*L,s);const t=s/L;if(t>0.7)f*=0.03+0.97*Math.pow(1-(t-0.7)/0.3,0.85);return f*rm};
   const prof=new Float32Array(N);for(let i=0;i<N;i++)prof[i]=profAt(i*ds);prof[N-1]=0;prof[N-2]*=0.5; // closed, pointed tail
-  // pattern: paired black dorsal ovals, lateral ocelli (black rings with orange-yellow centres), black blotches on a yellow belly
-  const rnd=mulberry32(p.sizeClass==='giant'?5:p.pal==='tree'?13:9),dsp=1.15*rm,pat={dors:[],lat:[],bel:[]};
-  for(let s=hb+0.5*rm;s<L*0.985;s+=dsp*(0.8+0.4*rnd()))for(const sd of[-1,1]){if(rnd()<0.07)continue;pat.dors.push({s:s+sd*dsp*0.25*rnd(),th:Math.PI/2+sd*(0.36+0.08*rnd()),ls:dsp*(0.3+0.12*rnd()),lt:0.19+0.07*rnd()})}
-  for(let s=hb+0.8*rm;s<L*0.97;s+=dsp*(1.05+0.4*rnd()))for(const sd of[-1,1]){const rad=0.22+0.07*rnd();pat.lat.push({s:s+dsp*0.45*rnd(),th:sd>0?0.06+0.14*rnd():Math.PI-0.06-0.14*rnd(),rad,ls:rad*profAt(s)*1.15})}
-  for(let s=hb;s<L*0.95;s+=dsp*0.35*(0.5+rnd()))if(rnd()<0.55){const rad=0.07+0.08*rnd();pat.bel.push({s,th:Math.PI*1.5+(rnd()-0.5)*1.5,rad,ls:rad*profAt(s)*1.4})}
-  const pos=new Float32Array(N*M*3),col=new Float32Array(N*M*3),idx=[],cc=new THREE.Color();
-  for(let i=0;i<N;i++)for(let j=0;j<M;j++){bodyColour(pat,i*ds,j/M*TAU,L,cc,COL);const k=(i*M+j)*3;col[k]=cc.r;col[k+1]=cc.g;col[k+2]=cc.b}
-  for(let i=0;i<N-1;i++)for(let j=0;j<M;j++){const a=i*M+j,b=i*M+(j+1)%M;idx.push(a,b,a+M,b,b+M,a+M)}
+  // pattern (in rest arc length, so it never smears on a bend): paired round black dorsal spots, lateral ocelli (black rings with
+  // orange-yellow centres), black blotches on a yellow belly. Baked into a texture: u = arc length, v = angle round the body.
+  const rnd=mulberry32(p.sizeClass==='giant'?5:p.pal==='tree'?13:9),dsp=1.15*rm,pat={bk:[]},put=d=>{for(let b=Math.max(0,Math.floor((d.s-d.ls)/PAT_BK));b<=Math.floor((d.s+d.ls)/PAT_BK);b++)(pat.bk[b]||(pat.bk[b]=[])).push(d)};
+  for(let s=hb+0.5*rm;s<L*0.985;s+=dsp*(0.8+0.4*rnd()))for(const sd of[-1,1]){if(rnd()<0.07)continue;const ls=dsp*(0.27+0.1*rnd()),r0=0.86*profAt(s);put({k:0,s:s+sd*dsp*0.22*rnd(),th:Math.PI/2+sd*(0.4+0.1*rnd()),ls,lt:ls/r0*(0.85+0.3*rnd())})}
+  for(let s=hb+0.8*rm;s<L*0.97;s+=dsp*(1.05+0.4*rnd()))for(const sd of[-1,1]){const rad=0.2+0.07*rnd();put({k:1,s:s+dsp*0.45*rnd(),th:sd>0?0.04+0.14*rnd():Math.PI-0.04-0.14*rnd(),rad,ls:rad*profAt(s)*1.05})}
+  for(let s=hb;s<L*0.95;s+=dsp*0.35*(0.5+rnd()))if(rnd()<0.55){const rad=0.07+0.08*rnd();put({k:2,s,th:Math.PI*1.5+(rnd()-0.5)*1.5,rad,ls:rad*profAt(s)*1.4})}
+  const TW=2048,TH=64,tex=new Uint8Array(TW*TH*4),cc=new THREE.Color();
+  for(let y=0;y<TH;y++){const th=(y+0.5)/TH*TAU;for(let x=0;x<TW;x++){bodyColour(pat,(x+0.5)/TW*L,th,L,cc,COL);cc.convertLinearToSRGB();const k=(y*TW+x)*4;tex[k]=cc.r*255;tex[k+1]=cc.g*255;tex[k+2]=cc.b*255;tex[k+3]=255}}
+  const map=new THREE.DataTexture(tex,TW,TH,THREE.RGBAFormat);map.encoding=THREE.sRGBEncoding;map.wrapS=THREE.ClampToEdgeWrapping;map.wrapT=THREE.RepeatWrapping;
+  map.magFilter=THREE.LinearFilter;map.minFilter=THREE.LinearMipmapLinearFilter;map.generateMipmaps=true;map.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());map.needsUpdate=true;
+  const mat=new THREE.MeshStandardMaterial({map,vertexColors:true,roughness:0.5,metalness:0});
+  // vertices: N rings of M+1 (the last repeats the first so the texture wraps without a seam); per-ring colour noise in the vertex colours
+  const nv=N*M1,pos=new Float32Array(nv*3),col=new Float32Array(nv*3),uv=new Float32Array(nv*2),idx=[];
+  for(let i=0;i<N;i++){const rn1=0.94+0.12*hash(i*7.13+(p.pal==='tree'?3:0)),tint=0.03*(hash(i*3.71)-0.5);
+    for(let j=0;j<M1;j++){const v=i*M1+j,k=v*3;col[k]=rn1*(1+tint);col[k+1]=rn1;col[k+2]=rn1*(1-tint);uv[v*2]=(i*ds)/L;uv[v*2+1]=j/M}}
+  for(let i=0;i<N-1;i++)for(let j=0;j<M;j++){const a=i*M1+j,b=a+1;idx.push(a,b,a+M1,b,b+M1,a+M1)}
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.BufferAttribute(pos,3).setUsage(THREE.DynamicDrawUsage));
-  geo.setAttribute('normal',new THREE.BufferAttribute(new Float32Array(N*M*3),3).setUsage(THREE.DynamicDrawUsage));
-  geo.setAttribute('color',new THREE.BufferAttribute(col,3));geo.setIndex(idx);
-  const mesh=new THREE.Mesh(geo,snakeMat);mesh.castShadow=mesh.receiveShadow=true;mesh.frustumCulled=false;scene.add(mesh);
-  const csj=new Float32Array(M),ycj=new Float32Array(M);
-  for(let j=0;j<M;j++){const th=j/M*TAU,sn=Math.sin(th);csj[j]=Math.cos(th);ycj[j]=sn>=0?0.86*Math.pow(sn,0.85):-0.7*Math.pow(-sn,0.55)} // flatter belly
+  geo.setAttribute('normal',new THREE.BufferAttribute(new Float32Array(nv*3),3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('color',new THREE.BufferAttribute(col,3));geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));geo.setIndex(idx);
+  const mesh=new THREE.Mesh(geo,mat);mesh.castShadow=mesh.receiveShadow=true;mesh.frustumCulled=false;scene.add(mesh);
+  const csj=new Float32Array(M1),ycj=new Float32Array(M1);
+  for(let j=0;j<M1;j++){const th=j/M*TAU,sn=Math.sin(th);csj[j]=Math.cos(th);ycj[j]=sn>=0?0.86*Math.pow(sn,0.85):-0.7*Math.pow(-sn,0.55)} // flatter belly
   // ---- head: wedge snout, eyes + nostrils on top, hinged jaw, forked tongue
   const head=new THREE.Group();head.rotation.order='YZX';
   const tipK=u=>u>0.86?Math.max(0,1-((u-0.86)/0.14)**2):1;
@@ -2291,28 +2381,31 @@ function buildSnakeMesh(p){
     (u,th,o,c)=>{const sn=Math.sin(th);
       if(sn<0){c.copy(-sn>0.6?COL.pink:COL.cream);return}
       const tm=th<=Math.PI/2?th:Math.PI-th; // 0 at the lip, π/2 on the crown
-      c.copy(COL.cream).lerp(COL.dors,sstep(0.08,0.4,tm));if(tm>1.1)c.lerp(COL.crown,0.5);
-      if(u>0.03&&u<ue+0.03){const tc=0.2+0.42*(u/ue),d=tm-tc;if(Math.abs(d)<0.11)c.copy(COL.black);else if(d>=0.11&&d<0.23)c.copy(COL.stripeO)} // post-ocular stripe
-      if(tm>0.9&&hash(u*57.3+th*3.1)>0.9)c.lerp(COL.black,0.7);
-      c.multiplyScalar(0.92+0.16*hash(u*31+th*17))}),snakeMat);
+      c.copy(COL.cream).lerp(COL.dors,sstep(0.06,0.32,tm));if(tm>0.75)c.lerp(COL.crown,sstep(0.75,1.1,tm)*0.85); // dark, matte crown
+      if(u>0.03&&u<ue+0.03){const tc=0.2+0.42*(u/ue),d=tm-tc;if(Math.abs(d)<0.09)c.copy(COL.black);else if(d>=0.09&&d<0.16)c.copy(COL.stripeO).multiplyScalar(0.8)} // post-ocular stripe
+      if(tm>0.95&&u<0.55&&hash(u*57.3+th*3.1)>0.86)c.lerp(COL.black,0.6);
+      c.multiplyScalar(0.9+0.12*hash(u*31+th*17))}),snakeHeadMat);
   skull.castShadow=true;
   const xh=xb+0.1*hl;
   const jaw=new THREE.Mesh(loft(22,16,(u,th,o)=>{const x=xb+0.04*hl+u*0.96*hl,us=(x-xb)/hl,w=0.96*wS(us),sn=Math.sin(th),d=lerp(0.5,0.26,u)*hw*Math.pow(tipK(us),0.5);
       o[0]=x-xh;o[2]=w*Math.cos(th);o[1]=sn>=0?-0.015*hw+0.008*hw*sn:-0.015*hw-d*Math.pow(-sn,0.7)},
-    (u,th,o,c)=>{const sn=Math.sin(th);if(sn>0.8)c.copy(COL.pink);else{c.copy(COL.cream).multiplyScalar(0.92+0.16*hash(u*41+th*9));if(hash(u*91.7+th*13.3)>0.93)c.copy(COL.black)}}),snakeMat);
+    (u,th,o,c)=>{const sn=Math.sin(th);if(sn>0.8)c.copy(COL.pink).multiplyScalar(0.7);else{c.copy(COL.cream).multiplyScalar(0.92+0.16*hash(u*41+th*9));if(hash(u*91.7+th*13.3)>0.93)c.copy(COL.black)}}),snakeHeadMat);
   jaw.castShadow=true;const jawPivot=new THREE.Group();jawPivot.position.set(xh,0,0);jawPivot.add(jaw);
-  const xe=xb+ue*hl,we=wS(ue),te=tS(ue),eR=0.13*hw,eyeY=te*Math.pow(Math.sqrt(1-0.66*0.66),0.7)+0.02*hw;
-  const irisM=new THREE.MeshStandardMaterial({color:lin(0xb39a3c),roughness:0.35}),pupM=new THREE.MeshStandardMaterial({color:0x080806,roughness:0.1});
+  // eyes sit high on the head but sunk into their sockets (only a low dome shows), under a brow ridge
+  const xe=xb+ue*hl,we=wS(ue),te=tS(ue),eR=0.12*hw,ez=0.56*we,surf=te*Math.pow(Math.sqrt(1-0.56*0.56),0.7),eyeY=surf-0.3*eR;
+  const irisM=new THREE.MeshStandardMaterial({color:lin(0x9c8434),roughness:0.3}),pupM=new THREE.MeshStandardMaterial({color:0x080806,roughness:0.15});
   const un=0.93,xn=xb+un*hl,wn=wS(un),tn=tS(un),nY=tn*0.95;
-  const bumpM=new THREE.MeshStandardMaterial({color:COL.dors,roughness:0.5}),holeM=new THREE.MeshBasicMaterial({color:0x050504});
+  const bumpM=new THREE.MeshStandardMaterial({color:COL.crown,roughness:0.7}),holeM=new THREE.MeshBasicMaterial({color:0x050504});
+  const eyeG=new THREE.SphereGeometry(eR,14,9),pupG=new THREE.SphereGeometry(1,10,8),browG=new THREE.SphereGeometry(1,12,8);
   for(const sd of[-1,1]){
-    const ir=new THREE.Mesh(new THREE.SphereGeometry(eR,12,8),irisM);ir.position.set(xe,eyeY,sd*0.66*we);
-    const pu=new THREE.Mesh(new THREE.SphereGeometry(eR*0.74,10,8),pupM);pu.position.set(xe+0.12*eR,eyeY+0.4*eR,sd*(0.66*we+0.22*eR));
+    const ir=new THREE.Mesh(eyeG,irisM);ir.position.set(xe,eyeY,sd*ez);
+    const pu=new THREE.Mesh(pupG,pupM);pu.scale.set(0.28*eR,0.72*eR,0.3*eR);pu.position.set(xe+0.2*eR,eyeY+0.55*eR,sd*(ez+0.5*eR));pu.rotation.x=sd*0.6; // a slit-like pupil
+    const br=new THREE.Mesh(browG,bumpM);br.scale.set(1.7*eR,0.45*eR,0.75*eR);br.position.set(xe-0.15*eR,surf+0.05*eR,sd*(ez-0.8*eR)); // supra-ocular ridge
     const nb=new THREE.Mesh(new THREE.SphereGeometry(0.075*hw,8,6),bumpM);nb.position.set(xn,nY,sd*0.3*wn);
     const nh=new THREE.Mesh(new THREE.SphereGeometry(0.035*hw,6,4),holeM);nh.position.set(xn+0.01*hw,nY+0.055*hw,sd*0.3*wn);
-    head.add(ir,pu,nb,nh);
+    head.add(ir,pu,br,nb,nh);
   }
-  const eyeTop=eyeY+eR*1.1,nosTop=nY+0.08*hw,subPitch=Math.atan2(eyeTop-nosTop,xn-xe); // level eyes and nostrils at the surface
+  const eyeTop=eyeY+eR*0.95,nosTop=nY+0.08*hw,subPitch=Math.atan2(eyeTop-nosTop,xn-xe); // level eyes and nostrils at the surface
   const tongue=new THREE.Group();tongue.position.set(xt-0.06*hw,-0.04*hw,0);
   const tm=new THREE.MeshStandardMaterial({color:lin(0x2a1820),roughness:0.4});
   const stem=new THREE.Mesh(new THREE.BoxGeometry(0.95*hw,0.035*hw,0.06*hw),tm);stem.position.x=0.475*hw;tongue.add(stem);
@@ -2320,15 +2413,21 @@ function buildSnakeMesh(p){
   tongue.visible=false;
   head.add(skull,jawPivot,tongue);scene.add(head);
   const F32=()=>new Float32Array(N);
-  const ring=new THREE.Mesh(new THREE.RingGeometry(0.82,1,48),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.6,depthWrite:false,side:THREE.DoubleSide,toneMapped:false}));
+  const ring=new THREE.Mesh(new THREE.RingGeometry(0.9,1,48),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.5,depthWrite:false,side:THREE.DoubleSide,toneMapped:false}));
   ring.rotation.x=-Math.PI/2;ring.renderOrder=5;scene.add(ring);
+  // meniscus: a soft bright rim on the water where the head breaks the surface
+  const men=new THREE.Mesh(MENISCUS_GEO,new THREE.MeshBasicMaterial({color:0xdfeee8,vertexColors:true,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false}));men.renderOrder=3;men.visible=false;scene.add(men);
   const label=document.createElement('div');label.className='slabel';label.dataset.intent='idle';document.getElementById('stage').insertBefore(label,document.querySelector('.hud'));
-  return {p,L,N,M,ds,ring,label,labelKey:'',be:F32(),te:F32(),rm,rn,hw,hl,xt,xb,hb,ib:Math.ceil(hb/ds),prof,mesh,geo,head,jaw:jawPivot,tongue,csj,ycj,eyeTop,subPitch,xe,xn,
+  return {p,L,N,M,M1,ds,ring,men,mat,label,labelKey:'',be:F32(),te:F32(),rm,rn,hw,hl,xt,xb,hb,ib:Math.ceil(hb/ds),prof,mesh,geo,head,jaw:jawPivot,tongue,csj,ycj,eyeTop,subPitch,xe,xn,
     bulgeAmp:Math.min(0.9,0.52/rm),bulgeSig:0.8+0.4*p.size,k:TAU/(L/3),ampBase:L/36*1.05,k2:TAU/(3.2*rm),
-    bx:F32(),bz:F32(),tx:F32(),tz:F32(),px:F32(),py:F32(),pz:F32(),rr:F32(),ux:F32(),uy:F32(),uz:F32(),hel:F32(),lift:F32(),lift2:F32(),sink:F32(),sink2:F32(),
-    vt:0,phase:0,phase2:0,amp:0,rect:0,subF:0,tel:0,sweep:0,hy:null,pitch:0,cw:0,con:null,conY:0,tongT:0,
-    ripT:0,bodyRipT:0,breathT:2,bubT:0,lastPres:'',holdW:new THREE.Vector3()};
+    bx:F32(),bz:F32(),tx:F32(),tz:F32(),px:F32(),py:F32(),pz:F32(),rr:F32(),ux:F32(),uy:F32(),uz:F32(),hel:F32(),lift:F32(),lift2:F32(),sink:F32(),sink2:F32(),fall:F32(),
+    vt:0,phase:0,phase2:0,amp:0,rect:0,subF:0,deepF:0,floatF:0,brace:0,tel:0,sweep:0,hy:null,pitch:0,cw:0,con:null,conY:0,tongT:0,fallT:0,
+    ripT:0,bodyRipT:0,breathT:2,bubT:0,splT:0,lastPres:'',holdW:new THREE.Vector3()};
 }
+// a flat elliptical rim (unit size; scaled to the head) with a soft inner and outer edge in vertex alpha-free form (colour fades to black: additive)
+const MENISCUS_GEO=(()=>{const n=40,P=[],C=[],I=[];for(let k=0;k<n;k++){const a=k/n*TAU,c=Math.cos(a),s=Math.sin(a);for(const [r,b] of [[0.86,0],[1,1],[1.28,0]]){P.push(c*r,0,s*r);C.push(b,b,b)}}
+  for(let k=0;k<n;k++){const a=k*3,b=((k+1)%n)*3;I.push(a,b,a+1,b,b+1,a+1,a+1,b+1,a+2,b+1,b+2,a+2)}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('color',new THREE.Float32BufferAttribute(C,3));g.setIndex(I);return g})();
 function sampleSpine(s,R){ // ring centres every ds metres (3D arc length) back along the head path (extrapolated straight past its end); R.be = elevation
   const path=s.path,N=R.N,ds=R.ds;let k=path.length-1,ax=s.head.x,az=s.head.z,ay=s.y,bx=path[k].x,bz=path[k].z,by=path[k].y||0,segL=Math.hypot(bx-ax,bz-az,by-ay),acc=0,dx=0,dz=0,ext=false;
   R.bx[0]=ax;R.bz[0]=az;R.be[0]=ay;
@@ -2342,23 +2441,46 @@ function sampleSpine(s,R){ // ring centres every ds metres (3D arc length) back 
     const t=segL>1e-6?acc/segL:0;R.bx[i]=ax+(bx-ax)*t;R.bz[i]=az+(bz-az)*t;R.be[i]=ay+(by-ay)*t;
   }
 }
-function bodyY(x,z,bTop,bBot,subF){ // centre height of a body section: on the ground, swimming with only the dorsal ridge out, or fully under
+function bodyY(x,z,bTop,bBot,subF,flt=0,deep=0){ // centre height of a body section: on the ground, swimming with only the dorsal ridge out, floating with the back out, or fully under (deeper when it sinks low)
   const e=edgeAt(x,z),g=groundY(x,z),land=g+bBot*0.92;if(e>0.4)return land;
-  let wy=lerp(WATER_Y-0.6*bTop,WATER_Y-bTop-0.08,subF);wy=Math.max(wy,g+bBot*0.9);
+  let wy=lerp(WATER_Y-0.6*bTop,WATER_Y-bTop-0.08,subF);wy=lerp(wy,WATER_Y-0.22*bTop,flt*(1-subF));wy-=deep*(0.25+0.5*bTop);wy=Math.max(wy,g+bBot*0.9);
   return lerp(land,wy,sstep(0.4,-0.9,e));
 }
 const CON_PRES=new Set(['Constrict','Drowning']);
 const _hv=new THREE.Vector3();
+// render-only separation: non-adjacent parts of one body (and the other snake's body) that overlap are pushed apart sideways, with the
+// push smoothed along the body so it bends rather than kinks. Deliberate stacking (a ball, the coils of a constriction) is exempt.
+const SEP={d0:new Float32Array(256),dx:new Float32Array(256),dz:new Float32Array(256),tx:new Float32Array(256),tz:new Float32Array(256)};
+function separateBody(R,N,self,O){
+  const gap=Math.ceil(2.4*R.rm/R.ds)+2,{px,pz,rr,te}=R,dx=SEP.dx,dz=SEP.dz;let bx0=1e9,bx1=-1e9,bz0=1e9,bz1=-1e9;
+  if(O){for(let j=0;j<O.N;j++){if(O.te[j]>0.25)continue;bx0=Math.min(bx0,O.px[j]);bx1=Math.max(bx1,O.px[j]);bz0=Math.min(bz0,O.pz[j]);bz1=Math.max(bz1,O.pz[j])}const m=1.6*(R.rm+O.rm);bx0-=m;bx1+=m;bz0-=m;bz1+=m}
+  const d0=SEP.d0;for(let i=1;i<N;i++)d0[i]=Math.hypot(px[i]-px[i-1],pz[i]-pz[i-1]);
+  for(let it=0;it<3;it++){dx.fill(0,0,N);dz.fill(0,0,N);let any=false;
+    if(self)for(let i=R.ib;i<N;i++){if(te[i]>0.25)continue;const xi=px[i],zi=pz[i],ri=rr[i];
+      for(let j=i+gap;j<N;j++){if(te[j]>0.25)continue;const ddx=xi-px[j],need=(ri+rr[j])*0.97;if(ddx>need||ddx<-need)continue;const ddz=zi-pz[j];if(ddz>need||ddz<-need)continue;const d2=ddx*ddx+ddz*ddz;if(d2>=need*need)continue;
+        const d=Math.sqrt(d2)||1e-3,push=Math.min(need-d,0.5*need)*0.5/d;dx[i]+=ddx*push;dz[i]+=ddz*push;dx[j]-=ddx*push;dz[j]-=ddz*push;any=true}}
+    if(O)for(let i=0;i<N;i++){if(te[i]>0.25)continue;const xi=px[i],zi=pz[i];if(xi<bx0||xi>bx1||zi<bz0||zi>bz1)continue;const ri=rr[i];
+      for(let j=0;j<O.N;j++){if(O.te[j]>0.25)continue;const ddx=xi-O.px[j],need=(ri+O.rr[j])*1.02;if(ddx>need||ddx<-need)continue;const ddz=zi-O.pz[j];if(ddz>need||ddz<-need)continue;const d2=ddx*ddx+ddz*ddz;if(d2>=need*need)continue;
+        const d=Math.sqrt(d2)||1e-3,push=(need-d)/d;dx[i]+=ddx*push;dz[i]+=ddz*push;any=true}}
+    if(!any)break;
+    for(let pass=0;pass<2;pass++){SEP.tx.set(dx.subarray(0,N));SEP.tz.set(dz.subarray(0,N));for(let i=1;i<N-1;i++){dx[i]=(SEP.tx[i-1]+2*SEP.tx[i]+SEP.tx[i+1])*0.25;dz[i]=(SEP.tz[i-1]+2*SEP.tz[i]+SEP.tz[i+1])*0.25}}
+    for(let i=R.ib;i<N;i++){let ddx=dx[i]*1.3,ddz=dz[i]*1.3;const m=Math.hypot(ddx,ddz),cap=0.3*rr[i]+0.02;if(m>cap){ddx*=cap/m;ddz*=cap/m}px[i]+=ddx;pz[i]+=ddz}
+    for(let i=Math.max(1,R.ib);i<N;i++){const ex=px[i]-px[i-1],ez=pz[i]-pz[i-1],d=Math.hypot(ex,ez),mx=d0[i]*1.01+1e-4;if(d>mx){px[i]=px[i-1]+ex*mx/d;pz[i]=pz[i-1]+ez*mx/d}} // the body cannot stretch: the tail follows
+  }
+}
 function renderSnake(brain,rdt){
-  const s=brain.body,c=brain.ctx,R=brain.R,{N,M,ds,L,hb,hw,rm}=R;
-  const vis=!brain.gone;R.mesh.visible=R.head.visible=vis;if(!vis)return;
+  const s=brain.body,c=brain.ctx,R=brain.R,{N,M1,ds,L,hb,hw,rm}=R;
+  const vis=!brain.gone;R.mesh.visible=R.head.visible=vis;if(!vis){R.men.visible=false;return}
   const gdt=clock.paused?0:Math.min(0.5,rdt*clock.scale),sdt=clock.paused?rdt:Math.min(0.5,rdt*clock.scale);
   R.vt+=sdt;
-  const op=brain.planner.op,cur=brain.planner.current,pres=s.pres,headW=edgeAt(s.head.x,s.head.z)<-0.2,creep=pres==='Creep'||pres==='Sneak';
+  const op=brain.planner.op,cur=brain.planner.current,pres=s.pres,headW=edgeAt(s.head.x,s.head.z)<-0.2,creep=pres==='Creep'||pres==='Sneak',low=creep||pres==='Prowling'||pres==='Trailing';
   R.subF+=((s.submerge&&s.inWater()?1:0)-R.subF)*ease(2.5,sdt);
+  R.deepF+=((s.deep&&s.inWater()?1:0)-R.deepF)*ease(1.2,sdt); // 'Sinks low': the whole body and the eyes go under, only the nostrils stay up
+  R.floatF+=((pres==='Floating'&&!s.submerge?1:0)-R.floatF)*ease(1.5,sdt); // floating: the back lies exposed at the surface
   R.tel+=((pres==='Telegraph'?1:0)-R.tel)*ease(5,sdt);
+  R.brace+=((pres==='Brace'?1:0)-R.brace)*ease(pres==='Brace'?9:4,sdt); // neck drawn back into an S before a land strike (no gape)
   // travelling wave: phase advances with distance travelled (stationary in the world on land, slipping a little in water)
-  let mode=1;if(creep)mode=0.08;else if(pres==='Telegraph'||pres==='Lunge'||pres==='Ambush strike')mode=0.15;
+  let mode=1;if(creep)mode=0.08;else if(pres==='Telegraph'||pres==='Lunge'||pres==='Ambush strike'||pres==='Brace'||pres==='Drop strike')mode=0.15;
   else if(CON_PRES.has(pres)||pres==='Swallow')mode=0;else if(op&&op.coil&&!op.wade)mode=0;else if(op&&op.wade)mode=0.6;
   if(!(mode===1&&s.speed<0.1))R.amp+=(R.ampBase*(headW?1.3:1)*mode*clamp(s.speed/1.2,0,1)-R.amp)*ease(1.5,sdt); // a halted snake keeps its curves
   const dph=R.k*s.speed*(headW?1.25:1)*gdt;R.phase+=dph;
@@ -2369,10 +2491,11 @@ function renderSnake(brain,rdt){
   R.tx[0]=R.bx[0];R.tz[0]=R.bz[0];R.tx[N-1]=R.bx[N-1];R.tz[N-1]=R.bz[N-1];
   for(let i=1;i<N-1;i++){R.tx[i]=(R.bx[i-1]+2*R.bx[i]+R.bx[i+1])*0.25;R.tz[i]=(R.bz[i-1]+2*R.bz[i]+R.bz[i+1])*0.25}
   R.te[0]=R.be[0];R.te[N-1]=R.be[N-1];for(let i=1;i<N-1;i++)R.te[i]=(R.be[i-1]+2*R.be[i]+R.be[i+1])*0.25;
-  const hx=s.head.x,hz=s.head.z,neckEnd=hb+2.5*hw;
+  const hx=s.head.x,hz=s.head.z,neckEnd=hb+2.5*hw,bL=hb+6*hw;
   for(let i=0;i<N;i++){
     const a=i>0?i-1:0,b=i<N-1?i+1:N-1;let fx=R.tx[a]-R.tx[b],fz=R.tz[a]-R.tz[b];const l=Math.hypot(fx,fz)||1;fx/=l;fz/=l;
-    const si=i*ds,off=amp*sstep(hb*0.7,hb+0.12*L,si)*(0.75+0.25*si/L)*Math.sin(R.phase-R.k*si); // envelope 0 at the head
+    const si=i*ds;let off=amp*sstep(hb*0.7,hb+0.12*L,si)*(0.75+0.25*si/L)*Math.sin(R.phase-R.k*si); // envelope 0 at the head
+    if(R.brace>0.01&&si>hb*0.6&&si<bL+hw)off+=R.brace*1.1*rm*Math.sin(TAU*(si-hb*0.6)/(bL-hb*0.6))*sstep(bL+hw,bL-hw,si); // S-brace of the neck
     const offA=off*(1-sstep(0.15,0.6,R.te[i])); // no lateral waves up a trunk or along a limb
     let x=R.tx[i]-fz*offA,z=R.tz[i]+fx*offA;
     if(si<neckEnd&&Math.abs(R.sweep)>1e-3){const a2=R.sweep*(1-sstep(hb*0.5,neckEnd,si)),ca=Math.cos(a2),sa=Math.sin(a2),dx=x-hx,dz=z-hz;x=hx+dx*ca-dz*sa;z=hz+dx*sa+dz*ca} // neck follows a head sweep
@@ -2382,49 +2505,63 @@ function renderSnake(brain,rdt){
   const sw=cur&&cur.name==='Swallow'&&op?clamp((op.prog??op.t/(op.dur||4))/0.9,0,1):-1;let bS=-99,bA=0;
   if(sw>=0){bS=lerp(0.3*hb,hb+1.6*hw,sstep(0.45,1,sw));bA=R.bulgeAmp*sstep(0.45,0.75,sw)}
   else if(s.bulge>0.02){bS=lerp(hb+1.6*hw,0.62*L,Math.pow(1-s.bulge,0.4));bA=R.bulgeAmp*clamp((s.bulge-0.02)/0.25,0,1)}
-  for(let i=0;i<N;i++){const si=i*ds;let r=R.prof[i];if(bA>0){const u=(si-bS)/R.bulgeSig;r*=1+bA*Math.exp(-u*u)}if(R.rect>0.01&&si>hb)r*=1+0.06*R.rect*Math.sin(R.k2*si-R.phase2);R.rr[i]=r;
-    R.py[i]=bodyY(R.px[i],R.pz[i],0.86*r,0.7*r,R.subF);if(R.te[i]>0.02)R.py[i]=Math.max(R.py[i],groundY(R.px[i],R.pz[i])+R.te[i]+0.72*r)}
+  for(let i=0;i<N;i++){const si=i*ds;let r=R.prof[i];if(bA>0){const u=(si-bS)/R.bulgeSig;r*=1+bA*Math.exp(-u*u)}if(R.rect>0.01&&si>hb)r*=1+0.06*R.rect*Math.sin(R.k2*si-R.phase2);R.rr[i]=r}
+  // resting bodies never pass through themselves or the other snake (sideways separation; a ball and the constriction coils are exempt)
+  const other=world.snakes.find(b=>b!==brain&&!b.gone&&b.R&&b.R.N&&world.snakes.indexOf(b)<world.snakes.indexOf(brain));
+  separateBody(R,N,pres!=='Balled'&&R.cw<0.5,other?other.R:null);
+  for(let i=0;i<N;i++){const r=R.rr[i];R.py[i]=bodyY(R.px[i],R.pz[i],0.86*r,0.7*r,R.subF,R.floatF,R.deepF);if(R.te[i]>0.02)R.py[i]=Math.max(R.py[i],groundY(R.px[i],R.pz[i])+R.te[i]+0.72*r)}
   // head pose on the true sim position
   const arb=sstep(0.05,0.5,s.y),F={x:Math.cos(s.h),z:Math.sin(s.h)},e=edgeAt(hx,hz),g=groundY(hx,hz),wb=sstep(0.3,-0.9,e)*(1-arb);
-  const raise=creep?-0.06*hw:pres==='Balled'?-0.25*hw:0.12*hw*clamp(s.speed,0,1);
-  let wy=lerp(WATER_Y-0.12*hw,WATER_Y+0.03-R.eyeTop,R.subF);wy=Math.max(wy,g+0.5*hw);
-  const hyT=lerp(lerp(g+0.46*hw+raise,wy,wb)+R.tel*0.9*hw,g+s.y+0.62*rm,arb); // up a tree: on the trunk / limb, or hanging
+  const raise=low?-0.08*hw:pres==='Balled'?-0.25*hw:pres==='Freezes'||pres==='Still'?0.05*hw:0.12*hw*clamp(s.speed,0,1);
+  let wy=lerp(WATER_Y-0.12*hw,WATER_Y+0.03-R.eyeTop,R.subF);wy=lerp(wy,WATER_Y-0.02-R.eyeTop-0.22*hw,R.deepF);wy=Math.max(wy,g+0.5*hw);
+  const hyT=lerp(lerp(g+0.46*hw+raise,wy,wb)+R.tel*0.9*hw+R.brace*0.55*hw*(1-wb),g+s.y+0.62*rm,arb); // up a tree: on the trunk / limb, or hanging
   R.hy=R.hy===null?hyT:R.hy+(hyT-R.hy)*ease(9,sdt);
   const slope=(1-wb)*Math.atan2(groundY(hx+F.x*R.xt,hz+F.z*R.xt)-groundY(hx+F.x*R.xb,hz+F.z*R.xb),R.hl);
-  const pitchT=lerp(lerp(creep?-0.04:0.05*clamp(s.speed,0,1),R.subPitch,wb*R.subF)+R.tel*0.22+slope,clamp(s.pitch,-1.45,1.1),arb);
+  const pitchT=lerp(lerp(low?-0.07:0.05*clamp(s.speed,0,1),R.subPitch+0.2*R.deepF,wb*R.subF)+R.tel*0.22+R.brace*0.12+slope,clamp(s.pitch,-1.45,1.1),arb);
   R.pitch+=(pitchT-R.pitch)*ease(6,sdt);
   let Hx=hx,Hy=R.hy,Hz=hz,Hyaw=s.h+R.sweep,Hp=R.pitch;
-  // constriction: 2-3 tight loops wrapped AROUND the prey (pinned where the coil began), the rest coiled flat beside it
-  const conOn=!!c.carried&&CON_PRES.has(pres)&&!!cur&&cur.name==='Constrict';
-  if(conOn&&!R.con){const hd=R.xt-0.32*R.hl;let x=hx+F.x*hd,z=hz+F.z*hd;const o=nearestPond({x,z}),ed=dist({x,z},o)-o.r,need=Math.min(o.r*0.62,0.32*L/Math.PI+2*rm);
-    if((pres==='Drowning'||ed<1)&&ed>-need){const d=norm(sub({x,z},o));x=o.x+d.x*(o.r-need);z=o.z+d.z*(o.r-need)} // slide the kill into the pool so the whole coil lies under water
-    R.con={x,z,Ax:-F.z,Az:F.x,Vx:F.x,Vz:F.z,inW:edgeAt(x,z)<-0.6,preyR:c.carried.kind==='capybara'?0.42:0.3,t0:R.vt}}
-  R.cw+=((conOn?1:0)-R.cw)*ease(conOn?1.8:2.5,sdt);if(!conOn&&R.cw<0.01)R.con=null;
-  const sq=R.con?Math.pow(Math.max(0,Math.sin((R.vt-R.con.t0)*2.2)),2)*(c.carried&&c.carried.limp?0.35:1):0; // squeeze pulses
+  // constriction: loops wrapped AROUND the prey (pinned where the coil began), the rest coiled flat beside it. In water it starts at the
+  // surface (coils half out, the prey's head and shoulders showing, splashing) and sinks as the struggle fades: the prey drowns.
+  // Parts of the body still up a tree join the coil only as they come down.
+  // the coil layout is kept through the swallow (loops unwrapping) and while the snake lies still afterwards
+  const conOn=!!c.carried&&CON_PRES.has(pres)&&!!cur&&cur.name==='Constrict',conKeep=!!R.con&&(sw>=0&&!!c.carried||!c.carried&&s.speed<0.15&&!(op&&op.coil&&!op.coil.done)&&!s.route);
+  if(conOn&&!R.con){const hd=R.xt-0.32*R.hl;let x=hx+F.x*hd,z=hz+F.z*hd;const o=nearestPond({x,z}),ed=pondGap(o,{x,z}),need=Math.min(o.r*0.6,0.26*L/Math.PI+2*rm);
+    if((pres==='Drowning'||ed<1)&&ed>-need){const q=edgePoint(o,{x,z},need);x=q.x;z=q.z} // slide the kill into the pool so the whole coil lies in water
+    const pr=c.carried,preyL=pr.kind==='human'?1.75:pr.kind==='capybara'?1.15*Math.cbrt(pr.mass||1):2.5,rF=0.75*rm;
+    const nL=clamp(preyL*1.3/(2.05*rF),1.3,2.25);
+    R.con={x,z,Ax:-F.z,Az:F.x,Vx:F.x,Vz:F.z,inW:edgeAt(x,z)<-0.6,preyR:pr.kind==='capybara'?0.42:0.3,preyL,nL,xs:preyL*0.18,t0:R.vt,s0:Math.max(0.05,pr.struggle||1),dep:0,unw:0}}
+  R.cw+=((conOn||conKeep?1:0)-R.cw)*ease(conOn?1.8:2.5,sdt);if(!conOn&&!conKeep&&R.cw<0.01)R.con=null;
+  if(R.con){R.con.unw+=((conOn?0:1)-R.con.unw)*ease(0.6,sdt)}
+  const pr=c.carried,strug=R.con&&pr?(pr.limp?0:clamp((pr.struggle||0)/R.con.s0,0,1)):0;
+  const sq=R.con?Math.pow(Math.max(0,Math.sin((R.vt-R.con.t0)*2.2)),2)*(pr&&pr.limp?0.35:1):0; // squeeze pulses
   if(R.con&&R.cw>0.001){
     const C=R.con,cw=R.cw,rF=0.75*rm,preyR=C.preyR*(1-0.12*sq),fl=groundY(C.x,C.z),Rlt=preyR+0.7*rF;
-    const cy=C.inW?Math.max(fl+Rlt+0.86*rF+0.05,WATER_Y-Rlt-0.86*rF-0.15):fl+C.preyR*0.95;R.conY=cy;
-    const nL=2.25,span=nL*2.05*rF;let xa=-span/2,phi=0,ex=0,ey=0,ez=0,eux=0,euy=1,euz=0,sEnd=-1,psi=0,rho0=Math.max(span/2,Rlt)+1.15*rm+0.1,rho=rho0,psi0=0,sg=1;
+    if(C.inW){const age=R.vt-C.t0,want=pr&&pr.limp?1:age<8?0:sstep(0.8,0.25,strug);C.dep+=(want-C.dep)*ease(0.5,sdt)}
+    const cyDeep=Math.max(fl+Rlt+0.86*rF+0.05,WATER_Y-Rlt-0.86*rF-0.15),cySurf=Math.max(fl+Rlt*0.6,WATER_Y+0.02);
+    const cy=C.inW?lerp(cySurf,cyDeep,sstep(0,1,C.dep)):fl+Math.max(C.preyR*0.95,0.6*(Rlt+0.86*rF));R.conY=cy;
+    const span=C.nL*2.05*rF;let xa=C.xs,phi=0,ex=0,ey=0,ez=0,eux=0,euy=1,euz=0,sEnd=-1,psi=0,rho0=Math.max(span/2,Rlt)+1.15*rm+0.1,rho=rho0,psi0=0,sg=1;
+    const ccx=C.x+C.Ax*(C.xs-span/2),ccz=C.z+C.Az*(C.xs-span/2); // the flat coil lies around the middle of the loops
     const Rl0=preyR+0.7*R.rr[R.ib]*(1-0.1*sq),stx=C.x+C.Ax*xa,sty=cy+Rl0,stz=C.z+C.Az*xa;
     for(let i=0;i<N;i++){
       const si=i*ds;let qx,qy,qz,ux=0,uy=1,uz=0,hel=1;
       if(si<hb){qx=stx+C.Vx*(hb-si);qy=sty;qz=stz+C.Vz*(hb-si)}
-      else if(sEnd<0){const Rl=preyR+0.7*R.rr[i]*(1-0.1*sq),cp=Math.cos(phi),sp=Math.sin(phi);ux=cp*1;uy=0;uz=0;
+      else if(sEnd<0){const Rl=preyR+0.7*R.rr[i]*(1-0.1*sq),cp=Math.cos(phi),sp=Math.sin(phi);
         const rx=C.Vx*sp,rz=C.Vz*sp;ux=rx;uy=cp;uz=rz; // radial direction from the prey's long axis
         qx=C.x+C.Ax*xa+Rl*rx;qy=cy+Rl*cp;qz=C.z+C.Az*xa+Rl*rz;
-        phi+=ds/Rl;xa+=ds/Rl/TAU*2.05*R.rr[i];
-        if(phi>=TAU*nL){sEnd=si;ex=qx;ey=qy;ez=qz;eux=ux;euy=uy;euz=uz;psi0=psi=Math.atan2(qz-C.z,qx-C.x);
+        phi+=ds/Rl;xa-=ds/Rl/TAU*2.05*R.rr[i]; // loops run from behind the prey's head toward its tail
+        if(phi>=TAU*C.nL*(1-C.unw)){sEnd=si;ex=qx;ey=qy;ez=qz;eux=ux;euy=uy;euz=uz;psi0=psi=Math.atan2(qz-ccz,qx-ccx);
           const tx=-Math.sin(psi),tz=Math.cos(psi);sg=(tx*-C.Vx+tz*-C.Vz)>=0?1:-1}}
       else{rho=rho0+2.15*rm*Math.abs(psi-psi0)/TAU;psi+=sg*ds/rho;
-        const sx=C.x+Math.cos(psi)*rho,sz=C.z+Math.sin(psi)*rho,r=R.rr[i],sy=bodyY(sx,sz,0.86*r,0.7*r,C.inW?1:R.subF),w=sstep(0,2.5*rm,si-sEnd);
+        const sx=ccx+Math.cos(psi)*rho,sz=ccz+Math.sin(psi)*rho,r=R.rr[i],sy=C.inW?Math.min(bodyY(sx,sz,0.86*r,0.7*r,1),lerp(WATER_Y-0.55*0.86*r,WATER_Y-0.86*r-0.1,C.dep)):bodyY(sx,sz,0.86*r,0.7*r,R.subF),w=sstep(0,2.5*rm,si-sEnd);
         qx=lerp(ex,sx,w);qy=lerp(ey,sy,w);qz=lerp(ez,sz,w);ux=lerp(eux,0,w);uy=lerp(euy,1,w);uz=lerp(euz,0,w);hel=1-w}
-      R.px[i]=lerp(R.px[i],qx,cw);R.py[i]=lerp(R.py[i],qy,cw);R.pz[i]=lerp(R.pz[i],qz,cw);
-      const ul=Math.hypot(lerp(0,ux,cw),lerp(1,uy,cw),lerp(0,uz,cw))||1;R.ux[i]=lerp(0,ux,cw)/ul;R.uy[i]=lerp(1,uy,cw)/ul;R.uz[i]=lerp(0,uz,cw)/ul;R.hel[i]=hel*cw;
+      const cwi=cw*(1-sstep(0.12,0.7,R.te[i])); // still up the tree: not part of the coil yet
+      R.px[i]=lerp(R.px[i],qx,cwi);R.py[i]=lerp(R.py[i],qy,cwi);R.pz[i]=lerp(R.pz[i],qz,cwi);
+      const ul=Math.hypot(lerp(0,ux,cwi),lerp(1,uy,cwi),lerp(0,uz,cwi))||1;R.ux[i]=lerp(0,ux,cwi)/ul;R.uy[i]=lerp(1,uy,cwi)/ul;R.uz[i]=lerp(0,uz,cwi)/ul;R.hel[i]=hel*cwi;
     }
-    const chx=stx+C.Vx*hb,chz=stz+C.Vz*hb,chy=cy+C.preyR+0.3*hw;
+    const chx=stx+C.Vx*hb,chz=stz+C.Vz*hb,chy=lerp(cy+C.preyR+0.3*hw,sty,C.unw);
     Hx=lerp(Hx,chx,cw);Hz=lerp(Hz,chz,cw);Hy=lerp(Hy,chy,cw);Hyaw=Hyaw+wrapA(Math.atan2(C.Vz,C.Vx)-Hyaw)*cw;Hp=lerp(Hp,-0.15,cw);
   }
-  // stacking: where the body crosses itself the head-side part rides over the tail-side part (reversed when balled up)
+  // stacking: where the body still crosses itself the head-side part rides over the tail-side part (reversed when balled up)
   const lift=R.lift,lf=R.lift2,sink=R.sink,sf=R.sink2;lift.fill(0);sink.fill(0);
   if(R.cw<0.95){
     const gap=Math.ceil(2.6*rm/ds)+2,top=pres!=='Balled';
@@ -2442,7 +2579,7 @@ function renderSnake(brain,rdt){
   // neck: rings inside / just behind the head follow the head line
   const sp=Math.sin(Hp);
   for(let i=0;i<N;i++){const si=i*ds;if(si>=hb+3*hw)break;const w=sstep(hb*0.6,hb+3*hw,si);R.py[i]=lerp(Hy+0.12*hw-si*sp,R.py[i],w)}
-  // build the tube
+  // build the tube (M+1 vertices per ring: the last repeats the first, so the pattern texture wraps)
   const pos=R.geo.attributes.position.array;let sx0=0,sy0=0,sz0=1;
   for(let i=0;i<N;i++){
     const a=i>0?i-1:0,b=i<N-1?i+1:N-1;let tx=R.px[a]-R.px[b],ty=R.py[a]-R.py[b],tz=R.pz[a]-R.pz[b];const tl=Math.hypot(tx,ty,tz)||1;tx/=tl;ty/=tl;tz/=tl;
@@ -2453,22 +2590,33 @@ function renderSnake(brain,rdt){
     if(sl<1e-4){sx=sx0;sy=sy0;sz=sz0}else{sx/=sl;sy/=sl;sz/=sl}
     ux=sy*tz-sz*ty;uy=sz*tx-sx*tz;uz=sx*ty-sy*tx;sx0=sx;sy0=sy;sz0=sz;
     const r=R.rr[i]*(1+0.06*sq*R.hel[i]),cx=R.px[i],cy=R.py[i],cz=R.pz[i];
-    for(let j=0;j<M;j++){const cs=R.csj[j]*r,yc=R.ycj[j]*r,k=(i*M+j)*3;pos[k]=cx+sx*cs+ux*yc;pos[k+1]=cy+sy*cs+uy*yc;pos[k+2]=cz+sz*cs+uz*yc}
+    for(let j=0;j<M1;j++){const cs=R.csj[j]*r,yc=R.ycj[j]*r,k=(i*M1+j)*3;pos[k]=cx+sx*cs+ux*yc;pos[k+1]=cy+sy*cs+uy*yc;pos[k+2]=cz+sz*cs+uz*yc}
   }
   R.geo.attributes.position.needsUpdate=true;R.geo.computeVertexNormals();
+  {const nr=R.geo.attributes.normal.array,M=M1-1;for(let i=0;i<N;i++){const a=i*M1*3,b=(i*M1+M)*3;for(let q=0;q<3;q++){const v=(nr[a+q]+nr[b+q])*0.5;nr[a+q]=nr[b+q]=v}}} // weld the seam
   // head transform, jaw, tongue
   R.head.position.set(Hx,Hy,Hz);R.head.rotation.set(0,-Hyaw,Hp);
   R.jaw.rotation.z=-s.mouth*(sw>=0?1.15:c.carried?0.85:0.75);
   const ext=s.tongueExt||0; // sim-driven tongue bursts
-  R.tongue.visible=ext>0.02;R.tongue.scale.set(Math.max(0.02,ext),1,1);R.tongue.rotation.z=(0.28*Math.sin(R.vt*28)-0.08)*ext;
+  R.tongue.visible=ext>0.02&&R.deepF<0.5;R.tongue.scale.set(Math.max(0.02,ext),1,1);R.tongue.rotation.z=(0.28*Math.sin(R.vt*28)-0.08)*ext;
   R.head.updateMatrixWorld();R.holdW.set(R.xt-0.32*R.hl,-0.08*hw,0).applyMatrix4(R.head.matrixWorld);
+  // meniscus where the head breaks the water
+  {const mid=R.xb+0.55*R.hl,cxm=Hx+Math.cos(Hyaw)*mid*Math.cos(Hp),czm=Hz+Math.sin(Hyaw)*mid*Math.cos(Hp),cut=Math.abs(Hy-WATER_Y)<0.75*hw&&edgeAt(cxm,czm)<-0.1&&arb<0.5&&R.cw<0.5;
+    const op2=cut?0.55*(1-sstep(0.3,0.75,Math.abs(Hy+0.2*hw-WATER_Y)/hw))*clamp(0.25+0.75*sunLight(),0.25,1):0;R.men.visible=op2>0.01;
+    if(R.men.visible){R.men.position.set(cxm,WATER_Y+0.012,czm);R.men.rotation.set(0,-Hyaw,0);const ph=1+0.04*Math.sin(R.vt*3.1);R.men.scale.set(0.62*R.hl*ph,1,0.85*hw*ph*(1-0.4*R.deepF));R.men.material.opacity=op2}}
   // water effects
   const fdt=clock.paused?rdt:Math.min(0.25,rdt*clock.scale),mx=Hx+Math.cos(Hyaw)*R.xt*0.85,mz=Hz+Math.sin(Hyaw)*R.xt*0.85;
   if(headW&&s.speed>0.15&&R.cw<0.5){R.ripT-=fdt;if(R.ripT<=0){R.ripT=clamp(0.3/s.speed,0.08,0.4);addRipple(mx,mz,0.35*hw,0.7,2.6,1-0.55*R.subF)}} // rings shed at the snout spread slower than the snake moves: a V-wake
   if(headW&&s.speed>0.3&&R.subF<0.5){R.bodyRipT-=fdt;if(R.bodyRipT<=0){R.bodyRipT=0.16;const i=R.ib+Math.floor(Math.random()*(N-R.ib));if(edgeAt(R.px[i],R.pz[i])<-0.3)addRipple(R.px[i],R.pz[i],R.rr[i]*0.9,0.3,1.8,0.4)}}
   if(R.subF>0.8&&s.speed<0.15&&headW&&R.cw<0.5){R.breathT-=fdt;if(R.breathT<=0){R.breathT=5+Math.random()*4;_hv.set(R.xn,0,0).applyMatrix4(R.head.matrixWorld);addRipple(_hv.x,_hv.z,0.12,0.45,2.6,0.8);addRipple(_hv.x,_hv.z,0.04,0.28,2,0.5);addBubble(_hv.x,WATER_Y-0.25,_hv.z)}}
-  if(R.con&&R.con.inW&&R.cw>0.5){R.bubT-=fdt;if(R.bubT<=0){R.bubT=0.06+Math.random()*0.12;addBubble(R.con.x+rand(-0.5,0.5),R.conY+0.4,R.con.z+rand(-0.5,0.5))}}
-  if(pres==='Ambush strike'&&R.lastPres!=='Ambush strike')for(let k=0;k<4;k++)addRipple(mx,mz,0.3+k*0.5,2.4-k*0.4,1.4+k*0.35,1.3);
+  if(R.con&&R.con.inW&&R.cw>0.5){const C=R.con;
+    if(C.dep>0.4){R.bubT-=fdt;if(R.bubT<=0){R.bubT=0.06+Math.random()*0.12;addBubble(C.x+rand(-0.5,0.5),Math.min(R.conY+0.4,WATER_Y-0.1),C.z+rand(-0.5,0.5))}}
+    if(C.dep<0.6&&strug>0.05){R.splT-=fdt;if(R.splT<=0){R.splT=rand(0.08,0.3)/(0.4+strug); // the struggle at the surface: splashes and rings
+      const a=Math.random()*TAU,rr=rand(0.6,1.4)*(C.preyR+0.75*rm),k=rand(-0.6,0.6)*C.nL*1.5*rm,x=C.x+C.Ax*(k-C.nL*0.75*rm)+Math.cos(a)*rr*0.6,z=C.z+C.Az*(k-C.nL*0.75*rm)+Math.sin(a)*rr*0.6;
+      addRipple(x,z,0.25,1.3,1.8,1.3*strug+0.3);addSpray(x,WATER_Y+0.05,z,Math.round(4+10*strug),1.6+2.6*strug)}}}
+  if(pres==='Ambush strike'&&R.lastPres!=='Ambush strike'){for(let k=0;k<4;k++)addRipple(mx,mz,0.3+k*0.5,2.4-k*0.4,1.4+k*0.35,1.3);if(headW)addSpray(mx,WATER_Y+0.05,mz,22,4.2)}
+  if(pres==='Drop strike'&&R.lastPres!=='Drop strike')R.dropT=1;
+  if(R.dropT>0&&s.y<0.15){R.dropT=0;if(headW){addSpray(mx,WATER_Y+0.05,mz,24,3.6);for(let k=0;k<3;k++)addRipple(mx,mz,0.3+k*0.4,2,1.6,1.2)}}
   R.lastPres=pres;
 }
 // ---- caught prey: limp on its side at the mouth (drag), pinned inside the coils (constrict / drown), slid in head-first (swallow).
@@ -2493,7 +2641,7 @@ function poseCaught(pr,g,brain){
     const xf=lerp(R.xt-0.32*R.hl,R.xb-0.2*R.hw,sstep(0.25,0.95,sw));_hv.set(xf+half*sc*tw,-0.08*R.hw,0).applyMatrix4(R.head.matrixWorld);cx=_hv.x;cy=_hv.y;cz=_hv.z;
     g.visible=sw<0.96;
   }
-  if(R.con&&R.cw>0.001){const C=R.con,w=R.cw;cx=lerp(cx,C.x,w);cy=lerp(cy,R.conY,w);cz=lerp(cz,C.z,w);ax=lerp(ax,C.Ax,w);az=lerp(az,C.Az,w);sc*=1-0.05*w*Math.pow(Math.max(0,Math.sin((R.vt-C.t0)*2.2)),2)}
+  if(R.con&&R.cw*(1-R.con.unw)>0.001){const C=R.con,w=R.cw*(1-C.unw);cx=lerp(cx,C.x,w);cy=lerp(cy,R.conY,w);cz=lerp(cz,C.z,w);ax=lerp(ax,C.Ax,w);az=lerp(az,C.Az,w);sc*=1-0.05*w*Math.pow(Math.max(0,Math.sin((R.vt-C.t0)*2.2)),2)}
   layPrey(g,pr.kind,cx,cy,cz,ax,az,roll,sc);
 }
 // ---- water surface effects: pooled ripple rings (one draw call; rings shed at a moving snout form its V-wake), rising bubbles
@@ -2510,6 +2658,13 @@ const FX={rips:[],ripI:0,bubs:[],bubI:0};
   for(let i=0;i<NB;i++){FX.bub.setMatrixAt(i,z0);FX.bubs.push({on:false})}
   scene.add(FX.bub);
 }
+// spray: white droplets thrown up by a struggle or a strike (pooled points, additive, fading out)
+{const NS=260,g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(NS*3),3).setUsage(THREE.DynamicDrawUsage));g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(NS*3),3).setUsage(THREE.DynamicDrawUsage));
+  const c=document.createElement('canvas');c.width=c.height=32;const x=c.getContext('2d'),gr=x.createRadialGradient(16,16,0,16,16,16);gr.addColorStop(0,'rgba(255,255,255,1)');gr.addColorStop(0.45,'rgba(255,255,255,0.6)');gr.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=gr;x.fillRect(0,0,32,32);
+  FX.spr=new THREE.Points(g,new THREE.PointsMaterial({size:0.16,map:new THREE.CanvasTexture(c),vertexColors:true,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false}));
+  FX.spr.frustumCulled=false;FX.spr.renderOrder=6;scene.add(FX.spr);FX.sp=[];FX.spI=0;for(let i=0;i<NS;i++)FX.sp.push({on:false})}
+function addSpray(x,y,z,n,v){for(let k=0;k<n;k++){const q=FX.sp[FX.spI++%FX.sp.length],a=Math.random()*TAU,h=rand(0.15,0.6)*v;Object.assign(q,{on:true,x:x+rand(-0.25,0.25),y,z:z+rand(-0.25,0.25),vx:Math.cos(a)*h,vz:Math.sin(a)*h,vy:v*rand(0.45,1),age:0,life:rand(0.5,1.1)})}}
+function sunLight(){return clamp(0.22+sunElev(clock.day)*1.1,0.12,1)}
 function addRipple(x,z,r0,grow,life,str){const q=FX.rips[FX.ripI++%FX.rips.length];Object.assign(q,{x,z,r0,grow,life,str,age:0})}
 function addBubble(x,y,z){const b=FX.bubs[FX.bubI++%FX.bubs.length];Object.assign(b,{on:true,x,y,z,vy:rand(0.6,1.1),sz:rand(0.04,0.11),ph:Math.random()*TAU})}
 const _fm=new THREE.Matrix4(),_fp=new THREE.Vector3(),_fs=new THREE.Vector3(),_fq=new THREE.Quaternion(),_fc=new THREE.Color();
@@ -2525,6 +2680,11 @@ function updateWater(fdt){
     if(b.y>=WATER_Y){b.on=false;FX.bub.setMatrixAt(i,_fm.makeScale(0,0,0));addRipple(b.x,b.z,0.03,0.35,1.1,0.55);return}
     FX.bub.setMatrixAt(i,_fm.compose(_fp.set(b.x+Math.sin(b.ph)*0.04,b.y,b.z+Math.cos(b.ph)*0.04),_fq.identity(),_fs.setScalar(b.sz)))});
   FX.bub.instanceMatrix.needsUpdate=true;
+  const sp=FX.spr.geometry.attributes.position,sc=FX.spr.geometry.attributes.color;let any=false;
+  FX.sp.forEach((q,i)=>{if(!q.on){if(q.wasOn){q.wasOn=false;sc.setXYZ(i,0,0,0);any=true}return}any=true;q.wasOn=true;q.age+=fdt;q.vy-=9.8*fdt;q.x+=q.vx*fdt;q.y+=q.vy*fdt;q.z+=q.vz*fdt;
+    if(q.age>=q.life||(q.y<WATER_Y&&q.vy<0)){q.on=false;if(q.y<WATER_Y+0.05&&Math.random()<0.3)addRipple(q.x,q.z,0.03,0.4,0.9,0.5);sc.setXYZ(i,0,0,0);return}
+    const f=(1-q.age/q.life)*light*0.9;sp.setXYZ(i,q.x,q.y,q.z);sc.setXYZ(i,f*0.92,f,f)});
+  if(any){sp.needsUpdate=true;sc.needsUpdate=true}
 }
 // ---- prey bodies: articulated humans and capybaras (local +x = facing, +y = up, feet at y=0; poseCaught/layPrey move the whole group)
 const preyMeshes=new Map();
@@ -2637,7 +2797,9 @@ function renderPrey(rdt){
 // gizmos (draped on the terrain / water surface)
 const giz=new THREE.Group();scene.add(giz);
 const gizMat=(col,op,top)=>new THREE.MeshBasicMaterial({color:lin(col),transparent:true,opacity:op,side:THREE.DoubleSide,depthWrite:false,depthTest:!top,toneMapped:false});
-const visionFan=new THREE.Mesh(new THREE.CircleGeometry(VISION_RANGE,40,-VISION_HALF,VISION_HALF*2),gizMat(0xe8d36b,0.08));visionFan.rotation.x=-Math.PI/2;visionFan.renderOrder=5;
+const visionFan=new THREE.Mesh(new THREE.CircleGeometry(VISION_RANGE,40,-VISION_HALF,VISION_HALF*2),new THREE.ShaderMaterial({uniforms:{uCol:{value:lin(0xe8d36b)},uA:{value:0.07}},transparent:true,depthWrite:false,side:THREE.DoubleSide,
+  vertexShader:'varying float vR;void main(){vR=length(position.xy)/'+VISION_RANGE.toFixed(1)+';gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  fragmentShader:'uniform vec3 uCol;uniform float uA;varying float vR;void main(){float a=uA*(1.0-smoothstep(0.15,1.0,vR))*smoothstep(0.02,0.12,vR)+uA*0.6*smoothstep(0.96,0.995,vR)*step(vR,1.0);gl_FragColor=vec4(uCol,a);}'}));visionFan.rotation.x=-Math.PI/2;visionFan.renderOrder=5;
 const visionHolder=new THREE.Group();visionHolder.add(visionFan);giz.add(visionHolder);
 const beliefRing=new THREE.Mesh(new THREE.RingGeometry(0.93,1,48),gizMat(0xe2654c,0.75));beliefRing.rotation.x=-Math.PI/2;giz.add(beliefRing);
 const markerGeo=new THREE.ConeGeometry(0.5,1.6,4);
@@ -2689,42 +2851,55 @@ function updateLabel(brain,fresh){
   if(brain.gone){el.style.display='none';return}
   _hv.copy(R.head.position);_hv.y+=0.9+0.25*R.p.size;_hv.project(camera);
   const r=renderer.domElement,vis=_hv.z<1&&Math.abs(_hv.x)<1.1&&Math.abs(_hv.y)<1.1;el.style.display=vis?'':'none';if(!vis)return;
-  el.style.transform=`translate(${((_hv.x+1)/2*r.clientWidth).toFixed(1)}px,${((1-_hv.y)/2*r.clientHeight).toFixed(1)}px) translate(-50%,-100%)`;
+  const narrow=r.clientWidth<600,lift=narrow?(brain===selBrain()?62:40):0;el.classList.toggle('lift',narrow);if(narrow)el.style.setProperty('--lift',(lift-2)+'px');
+  el.style.transform=`translate(${((_hv.x+1)/2*r.clientWidth).toFixed(1)}px,${((1-_hv.y)/2*r.clientHeight-lift).toFixed(1)}px) translate(-50%,-100%)`;
   el.classList.toggle('other',brain!==selBrain());el.style.zIndex=brain===selBrain()?2:1;
   if(fresh){const L=labelText(brain),key=L.intent+L.task+L.why;if(key!==R.labelKey){R.labelKey=key;el.dataset.intent=L.intent;el.innerHTML=`<b>${esc(L.task)}</b><span><i>${esc(brain.p.short)}</i> · ${esc(L.why)}</span>`}}
 }
 
 // sky, fog and light by time of day
+const WEATHER={rainK:0};
 const SKYC={dayTop:new THREE.Color(0x3f7ec6),dayHor:new THREE.Color(0xbcd5e2),duskTop:new THREE.Color(0x34466f),duskHor:new THREE.Color(0xe9945a),nightTop:new THREE.Color(0x03060f),nightHor:new THREE.Color(0x0c1626)};
 const _ca=new THREE.Color(),_cb=new THREE.Color(),SUNW=new THREE.Color(0xff8a40),SUND=new THREE.Color(0xfff2de),MOONC=new THREE.Color(0x9db4ff);
 function updateSky(){
-  const e=sunElev(clock.day),d=sstep(-0.2,0.3,e),dusk=Math.exp(-Math.pow((e-0.03)/0.17,2)),night=sstep(0.02,-0.25,e);
-  const top=skyU.top.value.copy(SKYC.nightTop).lerp(SKYC.dayTop,d).lerp(SKYC.duskTop,dusk*0.45),hor=skyU.hor.value.copy(SKYC.nightHor).lerp(SKYC.dayHor,d).lerp(SKYC.duskHor,dusk*0.7);
+  const e=sunElev(clock.day),d=sstep(-0.24,0.24,e),dusk=Math.exp(-Math.pow((e-0.03)/0.17,2)),night=sstep(0.02,-0.25,e),cl=weather.cloud,rainK=sstep(0.62,0.86,cl)*(weather.sky===2?1:0.35);
+  const nowS=performance.now()/1000;WEATHER.rainK+=(rainK-WEATHER.rainK)*ease(0.6,Math.min(0.5,nowS-(WEATHER.t||nowS)));WEATHER.t=nowS;const rk=WEATHER.rainK,grey=sstep(0.3,0.95,cl);
+  const top=skyU.top.value.copy(SKYC.nightTop).lerp(SKYC.dayTop,d).lerp(SKYC.duskTop,dusk*0.45),hor=skyU.hor.value.copy(SKYC.nightHor).lerp(SKYC.dayHor,d).lerp(SKYC.duskHor,dusk*0.7*(1-0.6*grey));
+  const cc=skyU.cloudCol.value.setRGB(0.05,0.06,0.08).lerp(_cb.setRGB(0.8,0.82,0.85),d).lerp(_ca.setRGB(0.95,0.62,0.45),dusk*0.45*(1-grey)).multiplyScalar(1-0.42*rk);
+  top.lerp(cc,grey*0.55);hor.lerp(cc,grey*0.45);skyU.cloud.value=cl;
   skyU.night.value=night;scene.background=hor;
-  scene.fog.color.copy(hor).lerp(top,0.1);scene.fog.density=lerp(0.0042,0.0016,d)+0.0012*dusk;
+  scene.fog.color.copy(hor).lerp(top,0.1);scene.fog.density=lerp(0.0042,0.0016,d)+0.0012*dusk+0.0035*rk;
   const a=(clock.day-0.25)*TAU,ft=controls.target;const sd=skyU.sunDir.value.set(Math.cos(a)*120,Math.sin(a)*150,50).normalize();
   skyU.sunCol.value.copy(SUNW).lerp(SUND,sstep(0.02,0.5,e));
-  if(e>-0.04){sun.position.set(ft.x+sd.x*200,sd.y*200,ft.z+sd.z*200);sun.color.copy(skyU.sunCol.value);sun.intensity=1.5*sstep(-0.04,0.3,e)*(1-0.6*weather.cloud)}
-  else{sun.position.set(ft.x-sd.x*200,-sd.y*200,ft.z-sd.z*200);sun.color.copy(MOONC);sun.intensity=0.3*sstep(-0.04,-0.3,e)}
+  // key light: the sun (still a warm, low light just around sunrise / sunset, from no lower than the horizon) or the moon
+  const sunI=1.55*sstep(-0.16,0.26,e)*(1-0.62*cl),moonI=0.22*sstep(-0.06,-0.3,e)*(1-0.55*cl);
+  if(sunI>=moonI){sun.position.set(ft.x+sd.x*200,Math.max(sd.y,0.06)*200,ft.z+sd.z*200);sun.color.copy(skyU.sunCol.value);sun.intensity=sunI}
+  else{sun.position.set(ft.x-sd.x*200,-sd.y*200,ft.z-sd.z*200);sun.color.copy(MOONC);sun.intensity=moonI}
   sun.target.position.copy(ft);
-  hemi.color.copy(_ca.set(0x34508f)).lerp(_cb.set(0xb3cfe6),d);hemi.groundColor.copy(_ca.set(0x0a0c0e)).lerp(_cb.set(0x4c4a30),d);hemi.intensity=lerp(0.07,0.55,d)+0.08*dusk;
-  const sky=_ca.copy(hor).convertSRGBToLinear().multiplyScalar(lerp(0.35,0.75,d));for(const m of waterMats){m.userData.u.uSky.value.copy(sky);m.specular.copy(m.userData.spec).multiplyScalar(lerp(0.2,1,d));m.shininess=lerp(500,m.userData.shine,d)} // a tight, dim moon glint at night
+  hemi.color.copy(_ca.set(0x34508f)).lerp(_cb.set(0xb3cfe6),d).lerp(_ca.set(0xd8b49a),dusk*0.35);hemi.groundColor.copy(_ca.set(0x0a0c0e)).lerp(_cb.set(0x4c4a30),d);
+  hemi.intensity=lerp(0.08,0.55,d)+0.3*dusk*(1-night*0.6)+0.12*grey*d;
+  const sky=_ca.copy(hor).convertSRGBToLinear().multiplyScalar(lerp(0.35,0.75,d));WEATHER_U.night.value=night;WEATHER_U.rain.value=rk;
+  for(const m of waterMats){m.userData.u.uSky.value.copy(sky);m.specular.copy(m.userData.spec).multiplyScalar(lerp(0.12,1,d)*(1-0.6*grey));m.shininess=lerp(700,m.userData.shine,d)} // a tight, dim moon glint at night
+  RAIN.mesh.visible=rk>0.02;RAIN.u.uA.value=rk*lerp(0.12,0.38,d);RAIN.u.uCam.value.copy(camera.position);RAIN.u.uCol.value.setRGB(0.6,0.65,0.72).lerp(_ca.setRGB(0.82,0.86,0.9),d);
   // campfire: flickering, dominant at night
   const tt=performance.now()/1000,fl=0.8+0.1*Math.sin(tt*13.1)+0.07*Math.sin(tt*29.7+1)+0.05*Math.sin(tt*51.3+2);
   FIRE.light.intensity=lerp(3.4,0.5,d)*fl;FIRE.flames.forEach((f,k)=>{const s=fl*(1+0.12*Math.sin(tt*(9+k*4)+k));f.scale.set(1/Math.sqrt(s),s,1/Math.sqrt(s));f.rotation.y=tt*(0.6+k*0.3)});
   const glow=lerp(1.6,0.9,d);FIRE.screens.forEach(s=>s.material.color.setRGB(0.42*glow,0.94*glow,0.78*glow));
-  renderer.toneMappingExposure=lerp(1.15,0.95,d);
+  renderer.toneMappingExposure=lerp(1.15,0.95,d)+0.18*dusk*(1-night)+0.08*grey*d;
 }
 function render(rdt){
   const brain=selBrain(),s=brain.body,c=brain.ctx;SR=brain.R;
   U.time.value=performance.now()/1000%1000;
   updateSky();skyDome.position.copy(camera.position);
   for(const b of world.snakes){renderSnake(b,rdt);
-    // intent ring under each head (at the head's height when up a tree)
+    // intent ring under each head (at the head's height when up a tree): thin, ~1.5 body widths; faint while feeding or with the gizmos off
     const R=b.R,bs=b.body,intent=WS_LABELS.Intent[b.ctx.ws[WS.Intent]];R.ring.visible=!b.gone;R.ring.material.color.set(INTENT_COL[intent]||0xffffff).convertSRGBToLinear();
-    const hx=bs.head.x,hz=bs.head.z,sc=0.9+0.9*bs.p.size+0.12*Math.sin(clock.t*3);R.ring.position.set(hx,bs.y>0.6?R.head.position.y-0.25:surfY(hx,hz)+0.06,hz);R.ring.scale.setScalar(sc)}
+    const hx=bs.head.x,hz=bs.head.z,sc=(1.5*R.rm+0.45)*(1+0.04*Math.sin(clock.t*3));R.ring.position.set(R.cw>0.3&&R.con?R.con.x:hx,bs.y>0.6?R.head.position.y-0.25:surfY(hx,hz)+0.06,R.cw>0.3&&R.con?R.con.z:hz);
+    if(R.cw>0.3&&R.con)R.ring.scale.setScalar(R.con.nL*1.6*R.rm+1.2);else R.ring.scale.setScalar(sc);
+    const want=(ui.gizmos?(intent==='feeding'?0.22:b===brain?0.55:0.35):0.12);R.ring.material.opacity+=(want-R.ring.material.opacity)*ease(4,rdt)}
+  updateVegPush();
   updateWater(clock.paused?rdt:Math.min(0.25,rdt*clock.scale));
-  {const m=GROVE_CROWN.mat,want=s.y>0.6&&!brain.gone&&camera.position.y>s.y+4?0.28:1;m.opacity+=(want-m.opacity)*ease(4,rdt);const tr=m.opacity<0.99;if(m.depthWrite===tr){m.depthWrite=!tr;m.needsUpdate=true}}
+  {const m=GROVE_CROWN.mat,want=s.y>0.6&&!brain.gone&&(camera.position.y>s.y+2||camera.position.distanceTo(brain.R.head.position)<30)?0.22:1;m.opacity+=(want-m.opacity)*ease(4,rdt);const tr=m.opacity<0.99;if(m.depthWrite===tr){m.depthWrite=!tr;m.needsUpdate=true}}
   renderPrey(rdt);
   updateGhost();
   // gizmos
@@ -2732,19 +2907,22 @@ function render(rdt){
   if(ui.gizmos){
     homeRing.visible=!brain.p.arboreal;groveRing.visible=!!brain.p.arboreal;
     visionHolder.position.set(s.head.x,s.y>0.6?groundY(s.head.x,s.head.z)+0.3:surfY(s.head.x,s.head.z)+0.3,s.head.z);visionHolder.rotation.y=-s.h;visionHolder.scale.setScalar(c.visionRange/VISION_RANGE);
-    const b=c.target;beliefRing.visible=!!b;targetLine.visible=!!b;
-    if(b){const r=Math.max(1,b.positionError);beliefRing.scale.setScalar(r);beliefRing.position.set(b.lastKnown.x,surfY(b.lastKnown.x,b.lastKnown.z)+0.14,b.lastKnown.z);beliefRing.material.opacity=0.25+0.6*b.confidence;
-      setDrape(targetLine,s.head.x,s.head.z,b.lastKnown.x,b.lastKnown.z,0.45);targetLine.material.opacity=0.35+0.6*b.confidence}
+    const feeding=!!c.carried,b=feeding?null:c.target,near=b&&dist(s.head,b.lastKnown)<c.p.strikeRange+1.5; // calm gizmos while feeding; no belief ring once the quarry is in reach
+    visionFan.material.uniforms.uA.value=feeding?0.025:0.07;
+    beliefRing.visible=!!b&&!near;targetLine.visible=!!b;
+    if(b){const r=Math.max(1,b.positionError);beliefRing.scale.setScalar(r);beliefRing.position.set(b.lastKnown.x,surfY(b.lastKnown.x,b.lastKnown.z)+0.14,b.lastKnown.z);beliefRing.material.opacity=0.2+0.5*b.confidence;
+      setDrape(targetLine,s.head.x,s.head.z,b.lastKnown.x,b.lastKnown.z,0.45);targetLine.material.opacity=(near?0.25:0.35)+0.45*b.confidence}
     investigateMk.visible=!!c.investigatePoint&&brain.planner.current&&brain.planner.current.name==='GoToInterest';
     if(c.investigatePoint)investigateMk.position.set(c.investigatePoint.x,surfY(c.investigatePoint.x,c.investigatePoint.z)+1.2,c.investigatePoint.z);
-    ambushMk.visible=!!c.ambushPoint;if(c.ambushPoint)ambushMk.position.set(c.ambushPoint.x,surfY(c.ambushPoint.x,c.ambushPoint.z)+0.07,c.ambushPoint.z);
+    ambushMk.visible=!!c.ambushPoint&&!feeding&&dist(s.head,c.ambushPoint)>3;if(c.ambushPoint)ambushMk.position.set(c.ambushPoint.x,surfY(c.ambushPoint.x,c.ambushPoint.z)+0.07,c.ambushPoint.z);
     directorMk.visible=!!c.order;if(c.order)directorMk.position.set(c.order.point.x,surfY(c.order.point.x,c.order.point.z)+0.1,c.order.point.z);
-    const g=c.moveGoal;goalLine.visible=!!g;if(g)setDrape(goalLine,s.head.x,s.head.z,g.x,g.z,0.3);
+    const g=c.moveGoal;goalLine.visible=!!g&&!feeding;if(g)setDrape(goalLine,s.head.x,s.head.z,g.x,g.z,0.3);
     const pos=markGeo.attributes.position,colA=markGeo.attributes.color;let n=0;const cc=_ca;
     for(const pr of world.prey){if(pr.kind==='noise')continue;cc.set(pr.color).convertSRGBToLinear();for(const m of pr.liveMarks(clock.t)){if(n>=MAXMARKS)break;const f=1-(clock.t-m.t)/SCENT_LIFE;if(m.y===undefined)m.y=surfY(m.x,m.z)+0.12;pos.setXYZ(n,m.x,m.y,m.z);colA.setXYZ(n,cc.r*f,cc.g*f,cc.b*f);n++}}
-    markGeo.setDrawRange(0,n);pos.needsUpdate=true;colA.needsUpdate=true;
+    markPts.material.opacity=feeding?0.35:0.9;markGeo.setDrawRange(0,n);pos.needsUpdate=true;colA.needsUpdate=true;
     while(brain.rippleQueue.length){const q=brain.rippleQueue.shift();if(ripples.some(o=>o.visible&&o.userData.life>0.45&&Math.hypot(o.position.x-q.p.x,o.position.z-q.p.z)<Math.max(2,q.r)))continue; // one live ring per spot
-      const r=ripples[rippleIdx++%ripples.length];r.visible=true;r.position.set(q.p.x,surfY(q.p.x,q.p.z)+0.1,q.p.z);r.userData={life:1,r:q.r};}
+      const same=ripples.filter(o=>o.visible&&o.userData.src===q.src);if(same.length>=3)same.sort((x,y)=>x.userData.life-y.userData.life)[0].visible=false; // only the 3 newest rings per source
+      const r=ripples[rippleIdx++%ripples.length];r.visible=true;r.position.set(q.p.x,surfY(q.p.x,q.p.z)+0.1,q.p.z);r.userData={life:1,r:q.r,src:q.src};}
   }else brain.rippleQueue.length=0;
   for(const b of world.snakes)if(b!==brain)b.rippleQueue.length=0;
   for(const r of ripples){if(!r.visible)continue;r.userData.life-=rdt*1.25;if(r.userData.life<=0){r.visible=false;continue}r.scale.setScalar(r.userData.r*(1.4-r.userData.life*0.4));r.material.opacity=0.6*r.userData.life}
@@ -2785,7 +2963,8 @@ function buildTabs(){const box=$('#snakeTabs');box.innerHTML='';world.snakes.for
   bt.innerHTML=`<span class="dot"></span>${esc(b.p.label)}`;bt.onclick=()=>{ui.sel=i;buildTabs();buildTree();updatePanel();for(const q of world.snakes)if(q.R)q.R.labelKey=''};box.appendChild(bt)});updateTabs()}
 function updateTabs(){document.querySelectorAll('#snakeTabs button').forEach(bt=>{const b=world.snakes[+bt.dataset.sel];const on=+bt.dataset.sel===ui.sel;bt.classList.toggle('on',on);bt.setAttribute('aria-selected',on);
   const d=bt.querySelector('.dot');if(b&&d)d.style.background=b.gone?'#555':'#'+new THREE.Color(INTENT_COL[WS_LABELS.Intent[b.ctx.ws[WS.Intent]]]).getHexString()})}
-function restart(){world.reset($('#pers').value);syncSnakeMeshes();buildTree();for(const [,g] of preyMeshes)scene.remove(g);preyMeshes.clear();updatePanel()}
+function snapCamera(){const h=selBrain().body.head,ph=view.clientWidth<600;controls.target.set(h.x,0,h.z);camera.position.set(h.x+(ph?9:14),ph?17:24,h.z+(ph?20:30));controls.update()} // start framed on the snake
+function restart(){world.reset($('#pers').value);syncSnakeMeshes();buildTree();for(const [,g] of preyMeshes)scene.remove(g);preyMeshes.clear();snapCamera();updatePanel();for(const b of world.snakes)if(b.R)b.R.labelKey=''}
 world.onSlotChange=()=>buildTree();
 world.onSnakesChanged=()=>{syncSnakeMeshes();buildTree()};
 
@@ -2862,17 +3041,20 @@ function updatePanel(){
    ============================================================ */
 function resize(){const w=view.clientWidth,h=view.clientHeight;if(!w||!h)return;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
 new ResizeObserver(resize).observe(view);
-restart();resize();
-let last=performance.now(),panelT=0;
+restart();resize();snapCamera();
+{const hid=[];scene.traverse(o=>{if(!o.visible){hid.push(o);o.visible=true}});try{renderer.compile(scene,camera)}catch(e){}hid.forEach(o=>o.visible=false)} // compile every shader (also of things shown later) before the first frame
+let last=performance.now(),panelT=0,frames=0;
 function frame(now){
-  const realDt=Math.min(0.1,(now-last)/1000);last=now;
+  const realDt=Math.min(frames<3?1/30:0.1,Math.max(0,(now-last)/1000));last=now;
   if(!clock.paused){
     let g=realDt*clock.scale;const step=1/30;let n=0;
     while(g>1e-6&&n<40){const dt=Math.min(step,g);world.step(dt);g-=dt;n++}
   }
   if(ui.follow){const sb=selBrain().body,h=sb.head,k=ease(3.7,realDt);const tx=lerp(controls.target.x,h.x,k),tz=lerp(controls.target.z,h.z,k),ty=lerp(controls.target.y,sb.y>0.6?sb.y*0.8:0,ease(2,realDt));
     camera.position.x+=tx-controls.target.x;camera.position.z+=tz-controls.target.z;camera.position.y+=ty-controls.target.y;controls.target.set(tx,ty,tz)}
+  if(ui.follow&&view.clientWidth<600){const d=camera.position.distanceTo(controls.target);if(d>30){const k=lerp(1,30/d,ease(1.5,realDt));camera.position.sub(controls.target).multiplyScalar(k).add(controls.target)}} // phones: a closer follow camera
   controls.update();render(realDt);
+  if(++frames===2){$('#loading').classList.add('done');updatePanel();for(const b of world.snakes)updateLabel(b,true)}
   if(now-panelT>180){panelT=now;updatePanel();for(const b of world.snakes)updateLabel(b,true)} // wall-clock cadence: the panel keeps up even at a very low frame rate
   requestAnimationFrame(frame);
 }
