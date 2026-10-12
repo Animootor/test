@@ -126,6 +126,118 @@ details summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:.12em;te
 p.note{font-size:13px;line-height:1.5;color:var(--muted);margin:0;max-width:65ch}
 .decomp{font:11px/1.4 var(--mono);margin-top:8px;max-height:300px;overflow:auto;white-space:pre;color:var(--muted)}
 .decomp .okl{color:var(--fg)}
+/* ---- Planner debugger (D): a full-screen overlay over the field view; the simulation keeps running underneath ----
+   Branch colours (one per top-level root branch, the same in graph, timeline and trace): slots of the validated categorical
+   palette stepped for a dark surface; Director (a slot) light and hatched, Idle neutral. Identity is never colour alone:
+   every bar, marker and node also carries its name (label, tooltip or legend). */
+:root{
+  --br0:#d8e0d4; --br1:#9085e9; --br2:#c98500; --br3:#d55181; --br4:#e66767; --br5:#199e70; --br6:#d95926; --br7:#3987e5; --br8:#008300; --br9:#5d6b62;
+  --seq0:#1c2a24; --seq1:#8fdccf;
+}
+.dbg{position:fixed;inset:0;z-index:20;background:var(--bg);display:flex;flex-direction:column;font:12px var(--mono);color:var(--fg)}
+.dbg[hidden]{display:none}
+.dbg-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel);flex:none}
+.dbg-title{font:800 15px var(--display);letter-spacing:.01em;white-space:nowrap}
+.dbg-title em{font-style:normal;color:var(--accent)}
+.dbg-title:focus{outline:none}
+.dctl{display:contents}
+.dgrp{display:flex;gap:4px;align-items:center;flex-wrap:nowrap}
+.dgrp .lbl{color:var(--muted);font-size:11px;margin-right:2px}
+.dsep{width:1px;align-self:stretch;background:var(--line);margin:0 2px}
+#dStatus{font:12px var(--mono);color:var(--muted);flex:1 1 260px;min-width:0;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dStatus b{color:var(--fg);font-weight:500}
+#dStatus .scrub{color:var(--accent)}
+.dbg-tabs{display:none}
+.dbg-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,45fr) minmax(0,55fr);gap:10px;padding:10px}
+.dcol{min-height:0;display:flex;flex-direction:column;gap:10px}
+.dcol.right{overflow-y:auto;padding-right:2px}
+.dp{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 10px 10px;min-width:0;display:flex;flex-direction:column;gap:6px}
+.dp h3{margin:0;font:600 11px/1.3 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+.dp h3 span{letter-spacing:0;text-transform:none;font-weight:400}
+#pGraph{flex:1 1 56%;min-height:0}
+#pDetail{flex:1 1 44%;min-height:0}
+.gwrap{position:relative;flex:1;min-height:180px;overflow:hidden;border-radius:4px;background:var(--bg);border:1px solid var(--line)}
+.gwrap canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
+.gwrap canvas.panning{cursor:grabbing}
+.dbg canvas:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.gtools{position:absolute;right:6px;top:6px;display:flex;gap:4px}
+.gtools button{padding:4px 7px;font-size:11px}
+#gPulse{position:absolute;left:0;top:0;pointer-events:none;border:2px solid var(--accent);border-radius:5px;display:none;animation:gpulse 1.3s ease-out infinite}
+@keyframes gpulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 75%,transparent)}100%{box-shadow:0 0 0 9px color-mix(in srgb,var(--accent) 0%,transparent)}}
+@media (prefers-reduced-motion:reduce){#gPulse{animation:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 45%,transparent)}}
+.dleg{display:flex;flex-wrap:wrap;gap:4px 12px;font:11px var(--mono);color:var(--muted);align-items:center}
+.dleg span{display:inline-flex;gap:5px;align-items:center;white-space:nowrap}
+.dleg svg{flex:none}
+.dleg i{display:inline-block;width:10px;height:10px;border-radius:2px;flex:none}
+.dleg button{padding:3px 6px;font-size:11px;display:inline-flex;gap:5px;align-items:center}
+.dleg button[aria-pressed=false]{opacity:.45;text-decoration:line-through}
+.cwrap{position:relative}
+.cwrap canvas{display:block;width:100%;cursor:crosshair;touch-action:pan-y}
+.subtabs{display:flex;gap:4px;flex-wrap:wrap}
+.subtabs button[aria-selected=true]{background:var(--accent);color:#1b1406;border-color:var(--accent)}
+.dscroll{overflow:auto;flex:1;min-height:0;font:12px/1.5 var(--mono)}
+.dscroll[hidden]{display:none}
+.dtip{position:fixed;z-index:40;pointer-events:none;background:var(--panel2);border:1px solid var(--muted);border-radius:4px;padding:6px 8px;font:11.5px/1.45 var(--mono);color:var(--fg);max-width:min(380px,92vw);box-shadow:0 6px 20px #0008;display:none}
+.dtip b{font-weight:500;color:var(--fg)}
+.dtip .m{color:var(--muted)}
+.dtip .g2{display:grid;grid-template-columns:auto auto;gap:0 10px}
+.dtip .hl{color:var(--accent)}
+.kv{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:2px 10px}
+.kv>span:nth-child(odd){color:var(--muted)}
+.ihead{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.ihead b{font:800 16px var(--display)}
+.chip{display:inline-block;font:500 10.5px/1.4 var(--mono);padding:0 5px;border-radius:3px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.chip.ok{border-color:var(--ok);color:var(--ok)}.chip.bad{border-color:var(--alert);color:var(--alert)}.chip.acc{border-color:var(--accent);color:var(--accent)}
+.chip.fill{background:var(--accent);color:#1b1406;border-color:var(--accent)}
+.dsec{margin-top:8px}
+.dsec>h4{margin:0 0 3px;font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.clist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+.clist li{display:grid;grid-template-columns:14px minmax(0,1fr);gap:2px 6px;align-items:start}
+.clist .rd{grid-column:2;display:flex;gap:4px;flex-wrap:wrap}
+.pf{font-size:12px;line-height:1.5}.pf.ok{color:var(--ok)}.pf.bad{color:var(--alert)}
+.mtrtab{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:2px 10px;align-items:baseline}
+.mtrtab .v i{font-style:normal;padding:0 2px;border-radius:2px}
+.mtrtab .v i.d{background:var(--accent);color:#1b1406}
+.trace{font:11.5px/1.55 var(--mono);margin-top:4px}
+.trace .tl{display:flex;flex-wrap:wrap;gap:0 6px;align-items:baseline;padding-left:calc(var(--d)*14px);border-left:2px solid transparent}
+.trace .tl.fin{border-left-color:var(--bc,var(--accent));background:color-mix(in srgb,var(--bc,var(--accent)) 12%,transparent)}
+.trace .tl .k{color:var(--muted);font-size:10px;width:30px;flex:none}
+.trace .tl .o{font-size:10.5px}
+.o.ok{color:var(--ok)}.o.bad{color:var(--alert)}.o.warn{color:var(--accent)}.o.mut{color:var(--muted)}.o.par{color:var(--scent)}
+.repnav{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.repnav .lbl{color:var(--muted);font-size:11px;margin-left:4px}
+.qlist{margin:0;padding-left:20px}
+.wsg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px 10px;font:11px var(--mono)}
+.wsg div{display:flex;justify-content:space-between;gap:6px;padding:1px 4px;border-radius:2px;min-width:0}
+.wsg div span:first-child{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wsg div.ch{background:color-mix(in srgb,var(--accent) 25%,transparent)}
+.dmeter{display:grid;grid-template-columns:max-content minmax(0,1fr) 3.4em;gap:3px 8px;align-items:center;font:11.5px var(--mono)}
+.linkb{background:none;border:0;padding:0;color:var(--fg);text-decoration:underline dotted;cursor:pointer;font:inherit}
+.dcopy{position:fixed;inset:0;z-index:50;background:#000a;display:flex;align-items:center;justify-content:center;padding:16px}
+.dcopy[hidden]{display:none}
+.dcopy>div{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;width:min(760px,100%);display:flex;flex-direction:column;gap:8px}
+.dcopy textarea{width:100%;height:min(50vh,420px);background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:4px;font:11px/1.4 var(--mono);resize:vertical}
+.dcopy textarea:focus-visible{outline:2px solid var(--accent)}
+@media (max-width:820px){
+  .dbg-head{padding:6px 8px;gap:6px}
+  .dbg-title{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  #dSnakes{order:1;flex:1;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  #dClose{order:2;flex:none}
+  .dctl{order:3;display:flex;gap:6px;width:100%;overflow-x:auto;scrollbar-width:none;padding-bottom:1px}
+  .dctl::-webkit-scrollbar,#dSnakes::-webkit-scrollbar{display:none}
+  .dctl>*,#dSnakes>*{flex:none}
+  #dStatus{display:none}
+  .dbg-tabs{display:flex;gap:4px;padding:6px 8px;border-bottom:1px solid var(--line);background:var(--panel);overflow-x:auto;flex:none;scrollbar-width:none}
+  .dbg-tabs button{flex:none}
+  .dbg-tabs button[aria-selected=true]{background:var(--accent);color:#1b1406;border-color:var(--accent)}
+  #dStatusM{display:block;font:11px var(--mono);color:var(--muted);padding:4px 8px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dbg-body{display:flex;flex-direction:column;padding:8px;gap:8px}
+  .dcol{display:contents}
+  .dp{display:none;flex:1;min-height:0;overflow:auto}
+  .dp.show{display:flex}
+  #pGraph.show .gwrap{min-height:0}
+}
+@media (min-width:821px){#dStatusM{display:none}}
 </style>
 
 <div id="app">
@@ -140,6 +252,7 @@ p.note{font-size:13px;line-height:1.5;color:var(--muted);margin:0;max-width:65ch
         <button data-speed="1">1×</button><button data-speed="3" class="on">3×</button><button data-speed="10">10×</button><button data-speed="30">30×</button>
         <button id="bFollow" class="on">Follow snake</button>
         <button id="bGizmo" class="on">Gizmos</button>
+        <button id="bDbg" aria-expanded="false" aria-controls="dbg" title="Planner debugger (D)">Debugger</button>
       </div>
       <div class="bar" role="group" aria-label="Click tool">
         <button data-tool="look" class="on">Look</button>
@@ -216,6 +329,70 @@ p.note{font-size:13px;line-height:1.5;color:var(--muted);margin:0;max-width:65ch
       <p class="note">Two snakes share the island, all of it their territory: the pool snake and a tree anaconda from the grove on Reed Pool's west shore. Every person on the island is prey they hunt. The tree anaconda sees 30% further from a tree and feels ground vibration weakly there; each snake senses the other with the same senses and reads its published intent from the ecosystem board. Each snake has three senses: sight (by the light: about 20 m in full day, 12–17 m at dusk and dawn, 8 m at night; 200° wedge, blocked by trunks), ground vibration (prey moving faster than 0.5 m/s, felt with 15% position error, dulled while submerged), water ripples from prey wading, drinking or swimming in its pool, and scent trails (weighted more at night). Crouching humans in tall grass are invisible and silent. Each behaviour runs as a task chosen by a Fluid-HTN-style planner. A higher branch only interrupts a running plan when it wins the method-traversal-record comparison.</p>
     </section>
   </aside>
+</div>
+<div id="dbg" class="dbg" hidden role="dialog" aria-modal="false" aria-labelledby="dbgTitle">
+  <header class="dbg-head">
+    <div class="dbg-title" id="dbgTitle" tabindex="-1"><em>Planner</em> debugger</div>
+    <div class="tabs" id="dSnakes" role="tablist" aria-label="Snake shown in the debugger"></div>
+    <div class="dctl">
+    <div class="dgrp" role="group" aria-label="Debug controls">
+      <button id="dPause" title="Pause / resume the simulation (P)">Pause</button>
+      <button id="dStep" title="Advance one simulation tick, 1/30 s (.)">Step tick</button>
+      <button id="dNext" title="Run until the selected snake's planner replans, then pause (N)">Step → replan</button>
+    </div>
+    <div class="dgrp" role="group" aria-label="Speed"><span class="lbl">speed</span><button data-speed="1">1×</button><button data-speed="3" class="on">3×</button><button data-speed="10">10×</button><button data-speed="30">30×</button></div>
+    <div class="dgrp" role="group" aria-label="Timeline window"><span class="lbl">window</span><button data-win="300">5 m</button><button data-win="1200" class="on">20 m</button><button data-win="3600">60 m</button></div>
+    <div class="dgrp"><button id="dLive" title="Return the time cursor to now (L)">Live</button><button id="dCopy" title="Copy the recorded history and replan traces of the timeline window (5/20/60 min) as JSON">Copy log</button></div>
+    </div>
+    <button id="dClose" title="Close the debugger (D or Esc)" aria-label="Close debugger">✕ Close</button>
+    <div id="dStatus" aria-live="off"></div>
+  </header>
+  <nav class="dbg-tabs" id="dTabs" role="tablist" aria-label="Debugger sections">
+    <button role="tab" data-pane="graph" aria-selected="true">Graph</button><button role="tab" data-pane="detail">Details</button><button role="tab" data-pane="timeline">Timeline</button><button role="tab" data-pane="ws">World state</button><button role="tab" data-pane="drives">Drives</button>
+  </nav>
+  <div id="dStatusM"></div>
+  <div class="dbg-body">
+    <div class="dcol">
+      <section class="dp show" id="pGraph" data-pane="graph">
+        <h3>HTN graph <span id="gInfo"></span></h3>
+        <div class="gwrap"><canvas id="cGraph" tabindex="0" role="img" aria-label="Domain tree. Arrow keys move between nodes, Enter folds or unfolds, the inspector shows the selected node."></canvas><div id="gPulse"></div>
+          <div class="gtools"><button id="gOut" aria-label="Zoom out">−</button><button id="gIn" aria-label="Zoom in">+</button><button id="gFit">Fit</button><button id="gFollow" class="on" aria-pressed="true" title="Keep the running task in view">Follow</button><button id="gAll" aria-pressed="false">Unfold all</button></div></div>
+        <div class="dleg" id="gLeg"></div>
+      </section>
+      <section class="dp" id="pDetail" data-pane="detail">
+        <h3><span class="subtabs" role="tablist" aria-label="Detail views"><button role="tab" data-sub="inspect" aria-selected="true">Inspector</button><button role="tab" data-sub="trace" aria-selected="false">Decision trace</button><button role="tab" data-sub="snap" aria-selected="false">Snapshot</button></span><span id="subInfo"></span></h3>
+        <div class="dscroll" id="vInspect"></div>
+        <div class="dscroll" id="vTrace" hidden><div class="repnav"><button id="rPrev">◀ Older</button><button id="rNext">Newer ▶</button><button id="rLatest" class="on" aria-pressed="true">Latest</button><span class="lbl" id="rLbl"></span></div><div id="rBody"></div></div>
+        <div class="dscroll" id="vSnap" hidden></div>
+      </section>
+    </div>
+    <div class="dcol right">
+      <section class="dp" id="pTimeline" data-pane="timeline">
+        <h3>Timeline <span>click a ▼ replan for its trace · click or drag elsewhere to move the time cursor</span></h3>
+        <div class="cwrap"><canvas id="cTL" tabindex="0" aria-label="Timeline of tasks, branches, replans and events for both snakes. Left and right arrow keys move the time cursor."></canvas></div>
+        <div class="dleg" id="tlLeg"></div>
+      </section>
+      <section class="dp" id="pWS" data-pane="ws">
+        <h3>World-state history <span id="wsInfo"></span></h3>
+        <div class="cwrap"><canvas id="cWS" tabindex="0" aria-label="World-state bytes over time, one row per byte. Hover for all values at a moment."></canvas></div>
+      </section>
+      <section class="dp" id="pDrives" data-pane="drives">
+        <h3>Drives <span>0–1; appetite on its own scale</span></h3>
+        <div class="dleg" id="drLeg"></div>
+        <div class="cwrap"><canvas id="cDR" tabindex="0" aria-label="Drive levels over time"></canvas></div>
+        <h3 style="margin-top:6px">Beliefs <span>confidence per target · strips show the sense channel</span></h3>
+        <div class="dleg" id="blLeg"></div>
+        <div class="cwrap"><canvas id="cBL" tabindex="0" aria-label="Belief confidence per person and the rival over time"></canvas></div>
+      </section>
+    </div>
+  </div>
+  <div class="dtip" id="dTip" role="tooltip"></div>
+  <div class="dcopy" id="dCopyBox" hidden role="dialog" aria-label="Copy the debugger log">
+    <div><h3 style="margin:0;font:600 12px var(--mono);color:var(--fg)">Debugger log (JSON)</h3>
+      <p class="note" id="dCopyNote">The clipboard is not available here. The text below is selected: press Ctrl+C (⌘C on a Mac) to copy it.</p>
+      <textarea id="dCopyText" readonly spellcheck="false"></textarea>
+      <div class="row"><button id="dCopySel">Select all</button><button id="dCopyClose">Close</button></div></div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
@@ -695,55 +872,66 @@ const WS_LABELS={BestContact:['none','scent','vibration','sight'],TargetVisible:
 const INTENT={idle:0,hunting:1,feeding:2,digesting:3,breeding:4,fleeing:5};
 const URGENT=new Set([WS.Stress,WS.DirectorOrder]);
 
+let TRK=null; // debugger: when an array, getState() records which world-state bytes a condition reads
 class SnakeContext{
   constructor(){
     this.ws=new Uint8Array(WS_NAMES.length);this.pws=null;this.planning=false;
     this.dirty=true;this.dirtyField=-1;this.dirtyReason='start';this.lastChanged=-1;this.lastChangedAt=-9;
-    this.mtr=[];this.mtrNames=[];this.active=new Set();this.decompLog=[];this.replans=[];this.rejected=0;
+    this.mtr=[];this.mtrNames=[];this.active=new Set();this.decompLog=[];this.replans=[];this.rejected=0;this.changes=[];
   }
   get now(){return clock.t}
-  getState(i){return this.planning?this.pws[i]:this.ws[i]}
+  getState(i){if(TRK)TRK.push(i);return this.planning?this.pws[i]:this.ws[i]}
   hasState(i,v){return this.getState(i)===v}
   setState(i,v,noDirty){
     if(this.planning){this.pws[i]=v;return}
-    if(this.ws[i]===v)return;this.ws[i]=v;this.lastChanged=i;this.lastChangedAt=clock.t;
-    if(!noDirty){this.dirty=true;this.dirtyField=i;this.dirtyReason=`${WS_NAMES[i]} → ${WS_LABELS[WS_NAMES[i]][v]??v}`}
+    const old=this.ws[i];if(old===v)return;this.ws[i]=v;this.lastChanged=i;this.lastChangedAt=clock.t;
+    if(!noDirty){this.dirty=true;this.dirtyField=i;this.dirtyReason=`${WS_NAMES[i]} → ${WS_LABELS[WS_NAMES[i]][v]??v}`;
+      if(this.changes.length>=12)this.changes.shift();this.changes.push([i,old,v,clock.t])} // (the debugger's trigger list: byte changes since the last plan)
   }
 }
 
 const condsOK=(node,c)=>node.conds.every(([,fn])=>fn(c));
+const failCond=(node,c)=>{for(const k of node.conds)if(!k[1](c))return k[0];return null}; // label of the first failing condition, or null
+// debugger bookkeeping: a numeric id per domain node and per-node stats (times planned / run, run time, outcomes)
+let NODE_ID=0;const NODE_BY_ID=new Map();
+const nid=n=>{if(!n.__id){n.__id=++NODE_ID;NODE_BY_ID.set(n.__id,n)}return n.__id};
+const nst=n=>n.__st||(n.__st={planned:0,run:0,time:0,ok:0,fail:0,abort:0,cf:0,last:-1});
+// why a new plan does or does not beat the running one (MTR: lexicographic, a lower index is a higher priority)
+function mtrWhy(nw,run){const n=Math.min(nw.length,run.length);
+  for(let i=0;i<n;i++)if(nw[i]!==run[i])return {k:i,better:nw[i]<run[i],txt:nw[i]<run[i]?`MTR[${i}] ${nw[i]} < ${run[i]}: higher priority, it interrupts the running plan`:`MTR[${i}] ${nw[i]} > ${run[i]}: lower priority than the running plan, it cannot interrupt`};
+  return {k:n,better:false,txt:`same MTR as the running plan up to depth ${n}: not better, the running plan is kept`}}
 class Planner{
   constructor(domain){this.domain=domain;this.rejected=0;this.queue=[];this.current=null;this.op=null;this.partial=[];this.taskStart=0}
   elapsed(){return clock.t-this.taskStart}
-  log(c,depth,name,res){if(c.decompLog.length<400)c.decompLog.push({depth,name,res})}
+  log(c,depth,node,res,cond){if(c.decompLog.length>=400)return null;const e=typeof node==='string'?{depth,name:node,res,type:'pause'}:{depth,name:node.name,res,type:node.type,node};if(cond!=null)e.cond=cond;c.decompLog.push(e);return e}
   decompose(node,c,r,depth){
     switch(node.type){
       case 'action':{
-        if(!condsOK(node,c)){this.log(c,depth,node.name,'condition failed');return F}
+        const bad=failCond(node,c);if(bad!==null){nst(node).cf++;this.log(c,depth,node,'condition failed',bad);return F}
         r.plan.push(node);r.active.push(node);for(const e of node.effects)e.fn(c,e.type);
-        this.log(c,depth,node.name,'→ plan');return S;
+        this.log(c,depth,node,'→ plan');return S;
       }
       case 'select':{
-        if(!condsOK(node,c)){this.log(c,depth,node.name,'condition failed');return F}
-        this.log(c,depth,node.name,'select');
+        const bad=failCond(node,c);if(bad!==null){nst(node).cf++;this.log(c,depth,node,'condition failed',bad);return F}
+        const le=this.log(c,depth,node,'select');
         for(let i=0;i<node.children.length;i++){
           const ch=node.children[i];const snap=c.pws.slice(),pl=r.plan.length,pa=r.partial.length,ac=r.active.length;
           r.mtr.push(i);r.names.push(ch.name||'?');
           const st=this.decompose(ch,c,r,depth+1);
-          if(st!==F){r.active.push(node);return st}
+          if(st!==F){r.active.push(node);if(le)le.pick=ch.name||'?';return st}
           c.pws=snap;r.plan.length=pl;r.partial.length=pa;r.active.length=ac;r.mtr.pop();r.names.pop();
         }
         return F;
       }
       case 'sequence':{
-        if(!condsOK(node,c)){this.log(c,depth,node.name,'condition failed');return F}
-        this.log(c,depth,node.name,'sequence');
+        const bad=failCond(node,c);if(bad!==null){nst(node).cf++;this.log(c,depth,node,'condition failed',bad);return F}
+        this.log(c,depth,node,'sequence');
         const st=this.decomposeSeqFrom(node,0,c,r,depth);if(st!==F)r.active.push(node);return st;
       }
       case 'slot':{
         const sub=this.domain.slots[node.id];
-        if(!sub){this.log(c,depth,node.name,'slot empty');return F}
-        this.log(c,depth,node.name,'slot');
+        if(!sub){this.log(c,depth,node,'slot empty');return F}
+        this.log(c,depth,node,'slot');
         const st=this.decompose(sub,c,r,depth+1);if(st!==F)r.active.push(node);return st;
       }
     }
@@ -755,7 +943,7 @@ class Planner{
       const ch=node.children[i];
       if(ch.type==='pause'){this.log(c,depth+1,'PausePlan','partial plan');r.partial.push({task:node,index:i+1});return PARTIAL}
       const st=this.decompose(ch,c,r,depth+1);
-      if(st===F){c.pws=snap;r.plan.length=pl;r.partial.length=pa;r.active.length=ac;this.log(c,depth,node.name,'sequence rolled back');return F}
+      if(st===F){c.pws=snap;r.plan.length=pl;r.partial.length=pa;r.active.length=ac;this.log(c,depth,node,'sequence rolled back');return F}
       if(st===PARTIAL){r.partial.push({task:node,index:i+1});return PARTIAL}
     }
     return S;
@@ -764,16 +952,23 @@ class Planner{
   endPlanning(c){c.planning=false;c.pws=null}
   applyPermanent(c,plan){for(const t of plan)for(const e of t.effects)if(e.type===EffectType.Permanent)e.fn(c,e.type)}
   clearPlan(c){this.queue=[];this.partial=[];c.mtr=[];c.mtrNames=[];c.active=new Set()}
-  stopOp(c,how){if(this.op&&this.op.stop)this.op.stop(c,how);this.current=null;this.op=null}
+  stopOp(c,how){
+    if(this.current){const s=nst(this.current);s.time+=clock.t-(this.segT??this.taskStart);if(how==='success')s.ok++;else if(how==='failure')s.fail++;else s.abort++;if(this.rec)this.rec.taskEnd(this._why||how)}
+    this._why=null;if(this.op&&this.op.stop)this.op.stop(c,how);this.current=null;this.op=null}
   findPlan(c){
-    const reason=c.dirtyReason;c.dirty=false;
+    const reason=c.dirtyReason,wasDirty=c.dirty,changes=c.changes;c.changes=[];c.dirty=false;
     this.beginPlanning(c);
     const r={plan:[],mtr:[],names:[],partial:[],active:[]};
     const st=this.decompose(this.domain.root,c,r,0);
     this.endPlanning(c);
-    if(st===F)return;
     const running=this.current||this.queue.length||this.partial.length;
-    if(running&&!mtrLess(r.mtr,c.mtr)){this.rejected++;c.lastReject=`${r.names.join(' › ')} (${reason})`;return}
+    // debugger record of this replan: trigger, decomposition log, old vs new MTR, outcome
+    const R=this.rec,rec=R?{kind:'plan',reason:wasDirty?reason:'idle: the plan ran out',changes,field:wasDirty?c.dirtyField:-1,log:c.decompLog,ws:c.ws.slice(),
+      oldMtr:c.mtr,oldNames:c.mtrNames,newMtr:r.mtr.slice(),newNames:r.names.slice(),plan:r.plan.map(t=>t.name),partial:r.partial.map(p=>`${p.task.name} @ step ${p.index}`),final:new Set(r.active),
+      running:running?[this.current?this.current.name:null,...this.queue.map(t=>t.name)].filter(Boolean):[]}:null;
+    if(st===F){if(rec){rec.accepted=false;rec.why='no plan: every branch of the root failed to decompose';rec.final=new Set();R.replan(rec)}return}
+    if(running&&!mtrLess(r.mtr,c.mtr)){this.rejected++;c.lastReject=`${r.names.join(' › ')} (${reason})`;
+      if(rec){const w=mtrWhy(r.mtr,c.mtr);rec.accepted=false;rec.why=w.txt;rec.diffAt=w.k;R.replan(rec)}return}
     const from=c.mtrNames.join(' › ')||'(no plan)';
     // plan repair: when the winning plan starts with the very task that is already running (same primitive, same operator), the
     // running task carries on under the new plan instead of being torn down and started again (no restarted coils or routes)
@@ -781,9 +976,14 @@ class Planner{
     // (a task that walked to its spot and has settled counts as the same as that rest or ambush started on the spot, and the reverse)
     const nx=r.plan[ci],sameOp=nx&&this.current&&this.op&&(nx.op===this.current.op||(this.op.phase==='rest'&&this.current.op.restF===nx.op)||(nx.op.restF&&nx.op.restF===this.current.op));
     const cont=!!(sameOp&&(nx.name===this.current.name||nx.op!==this.current.op)&&condsOK(nx,c));
-    if(this.current&&!cont)this.stopOp(c,'abort');
+    if(rec){rec.accepted=true;if(running){const w=mtrWhy(r.mtr,c.mtr);rec.why=w.txt;rec.diffAt=w.k}else rec.why='no plan was running: the new plan is taken'}
+    if(this.current&&!cont){this._why='interrupted';this.stopOp(c,'abort')}
     this.queue=r.plan.slice(cont?ci:0);this.partial=r.partial;c.mtr=r.mtr;c.mtrNames=r.names;c.active=new Set(r.active);
-    if(cont){const nn=this.queue.shift();if(nn.op===this.current.op)this.current=nn;c.continued=(c.continued||0)+1}
+    if(cont){const nn=this.queue.shift();if(nn.op===this.current.op&&nn!==this.current){ // the same operator under another task node: hand the running segment over
+        const s=nst(this.current);s.time+=clock.t-(this.segT??this.taskStart);s.ok++;if(R){R.taskEnd('handed over');R.taskStart(nn,r.mtr.length?r.mtr[0]:-1)}this.segT=clock.t;nst(nn).run++;nst(nn).last=clock.t;this.current=nn}
+      c.continued=(c.continued||0)+1}
+    for(const n of r.active)nst(n).planned++;
+    if(rec){rec.cont=cont;rec.result=[this.current?this.current.name:null,...this.queue.map(t=>t.name)].filter(Boolean);R.replan(rec)}
     this.applyPermanent(c,r.plan);
     c.replans.unshift({t:clock.t,from,to:r.names.join(' › '),reason,plan:r.plan.map(t=>t.name).join(', ')});
     if(c.replans.length>32)c.replans.pop();
@@ -794,8 +994,13 @@ class Planner{
     const r={plan:[],mtr:c.mtr.slice(),names:c.mtrNames.slice(),partial:[],active:[]};
     const st=this.decomposeSeqFrom(entry.task,entry.index,c,r,1);
     this.endPlanning(c);
-    if(st===F){this.clearPlan(c);c.dirty=true;c.dirtyReason=`partial plan of ${entry.task.name} failed`;return}
+    const R=this.rec,rec=R?{kind:'resume',reason:`resume the partial plan of ${entry.task.name} at step ${entry.index}`,changes:[],field:-1,log:c.decompLog,ws:c.ws.slice(),
+      oldMtr:c.mtr,oldNames:c.mtrNames,newMtr:r.mtr.slice(),newNames:r.names.slice(),plan:r.plan.map(t=>t.name),partial:r.partial.map(p=>`${p.task.name} @ step ${p.index}`),final:new Set(r.active),running:[],accepted:st!==F,
+      why:st===F?'the rest of the paused sequence no longer decomposes: plan cleared, full replan next':'the paused sequence continues (PausePlan partial plan)'}:null;
+    if(st===F){this.clearPlan(c);c.dirty=true;c.dirtyReason=`partial plan of ${entry.task.name} failed`;if(rec)R.replan(rec);return}
     this.queue=r.plan;this.partial=r.partial.concat(this.partial);c.mtr=r.mtr;c.mtrNames=r.names;r.active.forEach(n=>c.active.add(n));
+    for(const n of r.active)nst(n).planned++;
+    if(rec){rec.result=this.queue.map(t=>t.name);R.replan(rec)}
     this.applyPermanent(c,r.plan);
     if(!this.queue.length&&!this.partial.length)this.clearPlan(c);
   }
@@ -812,15 +1017,15 @@ class Planner{
     }
     if(!this.current&&this.queue.length){
       const t=this.queue.shift();
-      if(!condsOK(t,c)){const bad=t.conds.find(([,fn])=>!fn(c));this.clearPlan(c);c.dirty=true;c.dirtyField=-1;c.dirtyReason=`${t.name}: condition "${bad[0]}" failed on dequeue`;return}
-      this.current=t;this.op=t.op();this.taskStart=clock.t;if(this.op.start)this.op.start(c);
+      if(!condsOK(t,c)){const bad=t.conds.find(([,fn])=>!fn(c));this.clearPlan(c);c.dirty=true;c.dirtyField=-1;c.dirtyReason=`${t.name}: condition "${bad[0]}" failed on dequeue`;if(this.rec)this.rec.mark('dequeue',c.dirtyReason);return}
+      this.current=t;this.op=t.op();this.taskStart=this.segT=clock.t;{const s=nst(t);s.run++;s.last=clock.t}if(this.rec)this.rec.taskStart(t,c.mtr.length?c.mtr[0]:-1);if(this.op.start)this.op.start(c);
     }
     if(this.current){
       const t=this.current;
       for(const [label,fn,urgent] of t.exec){
         if(!fn(c)){
           if(!urgent&&this.dwelling(c))continue; // non-urgent failure waits out the minimum dwell
-          this.stopOp(c,'abort');this.clearPlan(c);c.dirty=true;c.dirtyField=-1;c.dirtyReason=`${t.name}: executing condition "${label}" failed`;
+          this._why='exec-cond abort';this.stopOp(c,'abort');this.clearPlan(c);c.dirty=true;c.dirtyField=-1;c.dirtyReason=`${t.name}: executing condition "${label}" failed`;if(this.rec)this.rec.mark('exec',c.dirtyReason);
           if(allowReplan)this.tick(c,0,false);return;
         }
       }
@@ -830,12 +1035,42 @@ class Planner{
         this.stopOp(c,'success');
         for(const e of t.effects)if(e.type===EffectType.PlanAndExecute)e.fn(c,e.type);
       }else if(st===F){
-        this.stopOp(c,'failure');this.clearPlan(c);c.dirty=true;c.dirtyField=-1;c.dirtyReason=`${t.name} failed`;
+        this.stopOp(c,'failure');this.clearPlan(c);c.dirty=true;c.dirtyField=-1;c.dirtyReason=`${t.name} failed`;if(this.rec)this.rec.mark('fail',c.dirtyReason);
       }
     }
   }
 }
 function mtrLess(a,b){const n=Math.min(a.length,b.length);for(let i=0;i<n;i++){if(a[i]<b[i])return true;if(a[i]>b[i])return false}return false}
+
+/* Planner debugger recorder (one per snake slot): ring buffers of 1 Hz snapshots (world state, drives, task, MTR, beliefs),
+   task segments, replan records (trigger, full decomposition log, old/new MTR, accepted/rejected) and marks (aborts, failures, events).
+   Caps: 7200 snapshots (120 sim minutes), 6000 task segments, 2500 replans, 3000 marks per snake. Cost: one small object per sim second. */
+class Ring{
+  constructor(n){this.n=n;this.a=new Array(n);this.s=0;this.len=0;this.total=0}
+  push(x){if(this.len<this.n){this.a[(this.s+this.len)%this.n]=x;this.len++}else{this.a[this.s]=x;this.s=(this.s+1)%this.n}this.total++;return x}
+  get(k){return this.a[(this.s+k)%this.n]}
+  last(){return this.len?this.get(this.len-1):null}
+  find(t){let lo=0,hi=this.len-1,r=-1;while(lo<=hi){const m=(lo+hi)>>1;if(this.get(m).t<=t){r=m;lo=m+1}else hi=m-1}return r} // last index with .t <= t (-1: none)
+  toArray(){const o=[];for(let k=0;k<this.len;k++)o.push(this.get(k));return o}
+}
+const r3=v=>Math.round(v*1000)/1000;
+class Recorder{
+  constructor(slot){this.slot=slot;this.samples=new Ring(7200);this.tasks=new Ring(6000);this.replans=new Ring(2500);this.marks=new Ring(3000);this.nextT=0;this.brain=null;this.seg=null;this.actSet=null;this.actN=-1;this.actArr=[]}
+  attach(b){this.taskEnd('gone');this.brain=b;b.planner.rec=this;b.rec=this;this.label=b.p.label;this.short=b.p.short}
+  taskStart(node,br){this.taskEnd('?');this.seg=this.tasks.push({t:clock.t,t1:null,name:node.name,nid:nid(node),br,end:''})}
+  taskEnd(how){if(this.seg){this.seg.t1=clock.t;this.seg.end=how;this.seg=null}}
+  mark(kind,text){this.marks.push({t:clock.t,kind,text})}
+  replan(r){r.t=clock.t;r.day=clock.day;r.id=this.replans.total;r.slot=this.slot;this.replans.push(r)}
+  tick(){const b=this.brain;if(!b)return;if((b.gone||b.dead)&&this.seg)this.taskEnd(b.gone?'gone':'seized');
+    if(clock.t>=this.nextT){this.nextT=Math.floor(clock.t)+1;this.sample()}}
+  sample(){const b=this.brain,c=b.ctx,pl=b.planner,d=b.drives;
+    if(c.active!==this.actSet||c.active.size!==this.actN){this.actSet=c.active;this.actN=c.active.size;this.actArr=Array.from(c.active,nid)}
+    const bel=[];for(const [p,bb] of c.beliefs)if(p.kind!=='noise'&&bb.confidence>0.02)bel.push([p.name,r3(bb.confidence),bb.best,p.color]);
+    const rv=c.rivalB;if(rv&&rv.confidence>0.02)bel.push([rv.brain.p.label,r3(rv.confidence),rv.best,'rival']);
+    this.samples.push({t:clock.t,day:clock.day,ws:c.ws.slice(),d:[d.hunger,d.digestion,d.heat,d.fatigue,d.stress,d.condition,d.prefT,d.appetite??NaN].map(r3),
+      task:pl.current?pl.current.name:null,tid:pl.current?nid(pl.current):0,el:pl.current?r3(pl.elapsed()):0,br:c.mtr.length?c.mtr[0]:-1,mtr:c.mtr,names:c.mtrNames,act:this.actArr,
+      q:pl.queue.map(t=>t.name),pa:pl.partial.map(e=>`${e.task.name} @ step ${e.index}`),tgt:c.target&&c.target.prey?c.target.prey.name:null,bel,state:b.gone?'gone':b.dead?'seized':''})}
+}
 
 /* Domain-builder helpers (the shape mirrors Fluid's DomainBuilder) */
 const A=(name,o={})=>({type:'action',name,conds:o.conds||[],exec:o.exec||[],op:o.op||Ops.succeed,effects:o.effects||[],tag:o.tag||''});
@@ -2176,7 +2411,9 @@ const world={
     for(const h of this.prey)if(h!==prey&&h.kind==='human'&&h.active&&h.state!=='caught'&&h.state!=='carcass'){const viaSnake=segDist(sh,h.pos,CAMP)<14&&dist(h.pos,CAMP)>dist(sh,CAMP);h.startFlee(sh,viaSnake?null:add(CAMP,randInCircle(4)),viaSnake?12:30);h.regroup=true;h.vigilantUntil=clock.t+200}
     this.event(`The others flee to camp to regroup`);
   },
-  event(text){this.events.unshift({t:clock.t,text});if(this.events.length>60)this.events.pop();toast(text)},
+  event(text){this.events.unshift({t:clock.t,text});if(this.events.length>60)this.events.pop();toast(text);
+    if(this.evlog){const b=this.snakes.find(o=>o.rec&&text.startsWith(o.p.short+': '));const kill=/Caught |Seized /.test(text);
+      this.evlog.push({t:clock.t,text,slot:b?b.rec.slot:-1});if(b)b.rec.mark(kill?'kill':'event',text.slice(b.p.short.length+2))}},
   hotspot(){let x=0,z=0,n=0;for(const p of this.prey){if(p.kind==='noise')continue;for(const m of p.liveMarks(clock.t))if(clock.t-m.t<120){x+=m.x;z+=m.z;n++}}return n?{x:x/n,z:z/n}:CAMP},
   nearestHuman(p){let best=null,bd=1e9;for(const h of this.prey)if(h.kind==='human'&&h.active&&h.state!=='caught'&&h.state!=='carcass'){const d=dist(h.pos,p);if(d<bd){bd=d;best=h}}return best},
   respawn(p){ // newcomers arrive from the island edge on the far side from the snakes
@@ -2187,10 +2424,11 @@ const world={
     p.state='walk';p.goal=add(CAMP,randInCircle(4));p.goalSpeed=1.4;p.crouch=false;p.dwell=rand(6,12);p.atPond=false;p.timer=0;
     this.event(`${p.name} lands on the island`)},
   reset(persKey){
-    clock.t=0;clock.day0=clock.day;weather.reset();this.prey=[];this.events=[];this.fear=[];this.pondAvoidUntil=0;this.board={intent:new Map()};this.groveAvoidUntil=0;this.stats={};
+    clock.t=0;clock.day0=clock.day;weather.reset();NODE_BY_ID.clear();this.evlog=new Ring(1500);this.prey=[];this.events=[];this.fear=[];this.pondAvoidUntil=0;this.board={intent:new Map()};this.groveAvoidUntil=0;this.stats={};
     HUMANS.forEach(([n,col],i)=>{this.prey.push(new Prey('human',n,col,add(CAMP,randInCircle(5))))});this.newcomerN=0;
     this.snakes=[new SnakeBrain(this,PERSONALITIES[persKey]),new SnakeBrain(this,PERSONALITIES.tree)];
     this.brain=this.snakes[0];this.snake=this.brain.body; // aliases: the first snake (harness / probes rely on them)
+    this.recs=this.snakes.map((b,i)=>{const r=new Recorder(i);r.attach(b);return r}); // planner debugger recorders, one per snake slot
     this.event(`${PERSONALITIES[persKey].label} released at ${HOME.name}; a tree anaconda lives in the grove on its west shore`);
   },
   step(dt){
@@ -2198,8 +2436,9 @@ const world={
     for(const p of this.prey)p.update(dt,this);
     this.prey=this.prey.filter(p=>p.kind!=='noise'||p.active);
     for(const b of this.snakes)b.tick(dt);
-    for(let i=0;i<this.snakes.length;i++){const b=this.snakes[i];if(b.gone&&clock.t>b.respawnAt){const nb=new SnakeBrain(this,b.p);this.snakes[i]=nb;if(i===0){this.brain=nb;this.snake=nb.body}this.event(`A new ${b.p.label.toLowerCase()} has moved into the grove`);this.onSnakesChanged&&this.onSnakesChanged()}}
+    for(let i=0;i<this.snakes.length;i++){const b=this.snakes[i];if(b.gone&&clock.t>b.respawnAt){const nb=new SnakeBrain(this,b.p);this.snakes[i]=nb;if(this.recs[i]){this.recs[i].attach(nb);this.recs[i].mark('event','a new snake moved in')}if(i===0){this.brain=nb;this.snake=nb.body}this.event(`A new ${b.p.label.toLowerCase()} has moved into the grove`);this.onSnakesChanged&&this.onSnakesChanged()}}
     this.brain=this.snakes[0];this.snake=this.brain.body;
+    for(const r of this.recs)r.tick();
   }
 };
 
@@ -3137,7 +3376,7 @@ function toast(t){ // identical consecutive messages merge into one line with a 
     d.style.animation='none';void d.offsetWidth;d.style.animation='';clearTimeout(lastToast.timer);lastToast.timer=setTimeout(()=>d.remove(),6000);return}
   const d=document.createElement('div');d.textContent=t;toastBox.prepend(d);const max=matchMedia('(max-width:820px)').matches?2:4;while(toastBox.children.length>max)toastBox.lastChild.remove();
   Object.assign(lastToast,{t,n:1,el:d,timer:setTimeout(()=>d.remove(),6000)})}
-$('#bPause').onclick=e=>{clock.paused=!clock.paused;e.target.textContent=clock.paused?'Play':'Pause';e.target.classList.toggle('on',clock.paused)};
+$('#bPause').onclick=()=>setPaused(!clock.paused);
 document.querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>{clock.scale=+b.dataset.speed;document.querySelectorAll('[data-speed]').forEach(x=>x.classList.toggle('on',x===b))});
 $('#bFollow').onclick=e=>{ui.follow=!ui.follow;e.target.classList.toggle('on',ui.follow)};
 $('#bGizmo').onclick=e=>{ui.gizmos=!ui.gizmos;e.target.classList.toggle('on',ui.gizmos)};
@@ -3154,13 +3393,13 @@ function syncSnakeMeshes(){ // one tube/head/ring/label per brain
   buildTabs();
 }
 function buildTabs(){const box=$('#snakeTabs');box.innerHTML='';world.snakes.forEach((b,i)=>{const bt=document.createElement('button');bt.setAttribute('role','tab');bt.dataset.sel=i;
-  bt.innerHTML=`<span class="dot"></span>${esc(b.p.label)}`;bt.onclick=()=>{ui.sel=i;buildTabs();buildTree();updatePanel();for(const q of world.snakes)if(q.R)q.R.labelKey=''};box.appendChild(bt)});updateTabs()}
+  bt.innerHTML=`<span class="dot"></span>${esc(b.p.label)}`;bt.onclick=()=>selectSnake(i);box.appendChild(bt)});updateTabs()}
 function updateTabs(){document.querySelectorAll('#snakeTabs button').forEach(bt=>{const b=world.snakes[+bt.dataset.sel];const on=+bt.dataset.sel===ui.sel;bt.classList.toggle('on',on);bt.setAttribute('aria-selected',on);
   const d=bt.querySelector('.dot');if(b&&d)d.style.background=b.gone?'#555':'#'+new THREE.Color(INTENT_COL[WS_LABELS.Intent[b.ctx.ws[WS.Intent]]]).getHexString()})}
 function snapCamera(){const h=selBrain().body.head,ph=view.clientWidth<600;controls.target.set(h.x,0,h.z);camera.position.set(h.x+(ph?9:14),ph?17:24,h.z+(ph?20:30));controls.update()} // start framed on the snake
-function restart(){world.reset($('#pers').value);syncSnakeMeshes();buildTree();for(const [,g] of preyMeshes)scene.remove(g);preyMeshes.clear();snapCamera();updatePanel();for(const b of world.snakes)if(b.R)b.R.labelKey=''}
+function restart(){world.reset($('#pers').value);dbgReset();syncSnakeMeshes();buildTree();for(const [,g] of preyMeshes)scene.remove(g);preyMeshes.clear();snapCamera();updatePanel();for(const b of world.snakes)if(b.R)b.R.labelKey=''}
 world.onSlotChange=()=>buildTree();
-world.onSnakesChanged=()=>{syncSnakeMeshes();buildTree()};
+world.onSnakesChanged=()=>{syncSnakeMeshes();buildTree();if(DBG.open)dbgBuildTabs()};
 
 const ray=new THREE.Raycaster(),ndc=new THREE.Vector2(),plane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
 let downAt=null;
@@ -3204,7 +3443,7 @@ function updatePanel(){
   $('#task').textContent=pl.current?`${pl.current.name} · ${pl.elapsed().toFixed(1)} s`:'(planning)';
   $('#mtr').innerHTML=c.mtrNames.length?c.mtrNames.map(n=>`<b>${esc(n)}</b>`).join(' › ')+`<br>MTR [${c.mtr.join(', ')}]`:'no plan';
   $('#execConds').innerHTML=pl.current?(pl.current.exec.length?pl.current.exec.map(([l,fn])=>`<li class="cond"><span class="dot ${fn(c)?'ok':'bad'}"></span>exec: ${esc(l)}</li>`).join(''):'<li class="cond"><span class="dot"></span>no executing conditions (committed)</li>'):'';
-  const q=[];if(pl.current)q.push(`<li class="cur">▶ ${esc(pl.current.name)}</li>`);pl.queue.forEach(t=>q.push(`<li>${esc(t.name)}</li>`));pl.partial.forEach(p=>q.push(`<li>⏸ resume ${esc(p.task.name)} at step ${p.index}</li>`));
+  const q=[];if(pl.current)q.push(`<li class="cur">▶ ${esc(pl.current.name)}</li>`);pl.queue.forEach(t=>q.push(`<li>${esc(t.name)}</li>`));pl.partial.forEach(p=>q.push(`<li>‖ resume ${esc(p.task.name)} at step ${p.index}</li>`));
   $('#queue').innerHTML=q.join('')||'<li>empty</li>';
   $('#rejects').textContent=`${pl.rejected} rejected replans`;
   const d=brain.drives;const dr=[['hunger',d.hunger,'#d6a23c'],['digestion',d.digestion,'#55b3a8'],['body heat',d.heat,'#e2654c'],['fatigue',d.fatigue,'#8b9b90'],['stress',d.stress,'#c58be0'],['condition',d.condition,'#9fbf6a']];
@@ -3226,9 +3465,478 @@ function updatePanel(){
     let valid=true;try{valid=n.conds?n.conds.every(([,fn])=>fn(c)):true}catch(e){valid=false}
     el.classList.toggle('valid',valid);el.classList.toggle('active',c.active.has(n));el.classList.toggle('cur',pl.current===n);
   }
-  if($('#decomp').closest('details').open)$('#decomp').innerHTML=c.decompLog.map(l=>`<span class="${l.res==='→ plan'?'okl':''}">${'  '.repeat(l.depth)}${esc(l.name)}  ${esc(l.res)}</span>`).join('\n');
+  if($('#decomp').closest('details').open)$('#decomp').innerHTML=c.decompLog.map(l=>`<span class="${l.res==='→ plan'?'okl':''}">${'  '.repeat(l.depth)}${esc(l.name)}  ${esc(l.res)}${l.cond?` (${esc(l.cond)})`:''}</span>`).join('\n');
   $('#events').innerHTML=world.events.slice(0,20).map(ev=>`<div><span class="t">${ev.t.toFixed(0)} s</span> ${esc(ev.text)}</div>`).join('');
 }
+
+/* ============================================================
+   12b. Planner debugger (D): live HTN graph + inspector, timeline (Gantt), decision traces, world-state history,
+   drives & beliefs, time cursor over the recorded snapshots, step controls, JSON export.
+   Reads the Recorder ring buffers (world.recs); draws only while open, at ~5 Hz plus on interaction.
+   ============================================================ */
+const CSSV=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const COL={};['bg','panel','panel2','line','fg','muted','accent','alert','ok','sight','vib','scent','water','seq0','seq1'].forEach(k=>COL[k]=CSSV('--'+k)||'#888888');
+const BR_COL=[...Array(10)].map((_,i)=>CSSV('--br'+i)||'#888888');
+const brCol=i=>i>=0&&i<BR_COL.length?BR_COL[i]:COL.muted;
+const brName=i=>{const r=world.brain&&world.brain.domain.root.children[i];return i<0||!r?'(no plan)':i===0?'Director':r.name};
+const MONO='"IBM Plex Mono", ui-monospace, Menlo, monospace';
+const CHAN=['memory','scent','vibration','sight'];
+const chanCol=k=>[COL.muted,COL.scent,COL.vib,COL.sight][k]||COL.muted;
+const pad2=n=>String(n).padStart(2,'0');
+const fmtT=t=>`${Math.floor(t/60)}:${pad2(Math.floor(t%60))}`;
+const fmtDay=d=>{const h=Math.floor(d*24),m=Math.floor((d*24-h)*60);return `${pad2(h)}:${pad2(m)} ${TOD_NAMES[todOf(d)]}`};
+const fmtDur=s=>s<60?`${s.toFixed(1)} s`:`${Math.floor(s/60)} m ${pad2(Math.round(s%60))} s`;
+const hexA=(h,a)=>{const n=parseInt(h.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`};
+const mixHex=(a,b,t)=>{const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16),f=s=>Math.round(((x>>s)&255)*(1-t)+((y>>s)&255)*t);return `rgb(${f(16)},${f(8)},${f(0)})`};
+const wsLbl=(i,v)=>{const L=WS_LABELS[WS_NAMES[i]];return L&&L[v]!=null?L[v]:String(v)};
+const TYPE_K={select:'SEL',sequence:'SEQ',action:'ACT',slot:'SLOT',pause:'PAUSE'};
+const glyphSVG=t=>`<svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true">${t==='select'?'<path d="M0-5L5 0L0 5L-5 0Z" fill="none" stroke="currentColor" stroke-width="1.3"/>':t==='sequence'?'<path d="M-4-4.5L4.5 0L-4 4.5Z" fill="none" stroke="currentColor" stroke-width="1.3"/>':t==='action'?'<circle r="4" fill="currentColor"/>':t==='slot'?'<rect x="-4.5" y="-4.5" width="9" height="9" fill="none" stroke="currentColor" stroke-dasharray="2 1.5"/>':'<path d="M-4-4.5h3v9h-3zM1-4.5h3v9h-3z" fill="currentColor"/>'}</svg>`;
+const EFF_DESC={PlanOnly:'only on the planning copy of the world state',PlanAndExecute:'while planning, and for real when the task succeeds',Permanent:'while planning, and for real when the plan is accepted'};
+
+const DBG={open:false,win:1200,cursor:null,hoverT:null,pane:'graph',sub:'inspect',sel:null,hov:null,rep:null,repFollow:true,step:null,t:0,msg:null,
+  hide:new Set(['condition']),hits:{tl:[]},drag:null,
+  g:{z:1,px:14,py:14,follow:true,user:new WeakMap(),all:false,lay:null,lastCur:null,fit:true,brain:null,reveal:null}};
+const dbgEl=$('#dbg'),tip=$('#dTip');
+const isPhone=()=>matchMedia('(max-width:820px)').matches;
+const recOf=()=>world.recs&&world.recs[ui.sel];
+const winT=()=>{const t1=Math.max(clock.t,DBG.win);return [t1-DBG.win,t1]};
+let TL_L=118,TL_R=58; // time-chart gutters (narrower on phones, set per render)
+const shown=el=>!!(el&&el.offsetParent!==null&&el.clientWidth>0);
+function setHTML(el,h){if(el._h!==h){el._h=h;el.innerHTML=h}}
+function scrubSample(){if(DBG.cursor==null)return null;const R=recOf();if(!R||!R.samples.len)return null;const k=R.samples.find(DBG.cursor);return R.samples.get(Math.max(0,k))}
+function sampleAt(R,t){if(t>clock.t+0.5)return null;const k=R.samples.find(t);return k>=0?R.samples.get(k):null}
+// evaluate conditions against a recorded world-state copy (getState reads pws while "planning"); other inputs stay live
+function withWS(c,ws,fn){if(!ws)return fn();const p=c.planning,pw=c.pws;c.planning=true;c.pws=ws.slice();try{return fn()}finally{c.planning=p;c.pws=pw}}
+function evalCond(fn,c){TRK=[];let ok=false;try{ok=!!fn(c)}catch(e){ok=false}const reads=[...new Set(TRK)];TRK=null;return {ok,reads}}
+function cvFit(cv,h){const p=cv.parentElement,w=p.clientWidth;if(!w)return null;if(h==null)h=p.clientHeight;if(!h)return null;
+  const dpr=Math.min(2,window.devicePixelRatio||1),W=Math.round(w*dpr),H=Math.round(h*dpr);if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H}
+  if(!p.classList.contains('gwrap')&&cv.style.height!==h+'px')cv.style.height=h+'px';
+  const g=cv.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,w,h);g.font=`11px ${MONO}`;g.textBaseline='middle';return {g,w,h}}
+function rr(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+function hatch(g,x,y,w,h){g.save();g.beginPath();g.rect(x,y,w,h);g.clip();g.strokeStyle=hexA(COL.bg,0.55);g.lineWidth=1.5;g.beginPath();for(let k=-h;k<w;k+=5){g.moveTo(x+k,y+h);g.lineTo(x+k+h,y)}g.stroke();g.restore()}
+function showTip(html,x,y){tip.innerHTML=html;tip.style.display='block';const r=tip.getBoundingClientRect();let L=x+14,T=y+14;
+  if(L+r.width>innerWidth-6)L=x-14-r.width;if(L<6)L=6;if(T+r.height>innerHeight-6)T=y-14-r.height;if(T<6)T=6;tip.style.left=L+'px';tip.style.top=T+'px'}
+function hideTip(){tip.style.display='none'}
+function dbgMsg(t){DBG.msg={text:t,until:performance.now()+6000};dbgKick()}
+let dbgRAF=0;function dbgKick(){if(!dbgRAF&&DBG.open)dbgRAF=requestAnimationFrame(()=>{dbgRAF=0;dbgRender()})}
+
+/* ---------- shared time axis (timeline, world state, drives, beliefs line up on the same x) ---------- */
+function tAxis(w){const [t0,t1]=winT(),x0=TL_L,x1=w-TL_R;return {t0,t1,x0,x1,X:t=>x0+(t-t0)/(t1-t0)*(x1-x0),T:x=>t0+(x-x0)/(x1-x0)*(t1-t0)}}
+function tGrid(g,A,top,bot){const span=A.t1-A.t0,step=span<=300?60:span<=1200?300:600;g.fillStyle=hexA(COL.line,0.9);
+  for(let t=Math.ceil(A.t0/step)*step;t<=A.t1;t+=step)g.fillRect(Math.round(A.X(t)),top,1,bot-top)}
+function tTicks(g,A,y){const span=A.t1-A.t0,step=span<=300?60:span<=1200?300:600;g.fillStyle=COL.muted;g.textAlign='center';g.font=`10.5px ${MONO}`;
+  for(let t=Math.ceil(A.t0/step)*step;t<=A.t1;t+=step){const x=A.X(t);g.fillRect(Math.round(x),y,1,4);g.fillText(`${Math.round(t/60)} min`,x,y+11)}
+  g.textAlign='right';g.fillText('sim time',A.x0-24,y+11)}
+function tCursor(g,A,top,bot){
+  if(DBG.hoverT!=null&&DBG.hoverT>=A.t0&&DBG.hoverT<=A.t1){const x=Math.round(A.X(DBG.hoverT))+0.5;g.save();g.strokeStyle=hexA(COL.fg,0.45);g.setLineDash([3,3]);g.lineWidth=1;g.beginPath();g.moveTo(x,top);g.lineTo(x,bot);g.stroke();g.restore()}
+  if(DBG.cursor!=null&&DBG.cursor>=A.t0&&DBG.cursor<=A.t1){const x=A.X(DBG.cursor);g.fillStyle=COL.accent;g.fillRect(x-1,top,2,bot-top);g.beginPath();g.moveTo(x-5,top);g.lineTo(x+5,top);g.lineTo(x,top+6);g.closePath();g.fill()}}
+function timeChart(cv,onHover,onClick){
+  const pos=e=>{const r=cv.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top,A:tAxis(r.width)}};
+  const setCur=(A,x)=>{DBG.cursor=clamp(A.T(x),A.t0,Math.min(A.t1,clock.t));dbgKick()};
+  cv.addEventListener('pointermove',e=>{const {x,y,A}=pos(e);
+    if(DBG.drag===cv){DBG.hoverT=null;hideTip();setCur(A,x);return}
+    DBG.hoverT=x>=A.x0&&x<=A.x1?A.T(x):null;const h=onHover(x,y,A);if(h)showTip(h,e.clientX,e.clientY);else hideTip();dbgKick()});
+  cv.addEventListener('pointerleave',()=>{DBG.hoverT=null;hideTip();dbgKick()});
+  cv.addEventListener('pointerdown',e=>{const {x,y,A}=pos(e);if(onClick&&onClick(x,y,A))return;if(x<A.x0-4||x>A.x1+4)return;
+    DBG.drag=cv;try{cv.setPointerCapture(e.pointerId)}catch(_){}setCur(A,x)});
+  const up=()=>{if(DBG.drag===cv)DBG.drag=null};cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+  cv.addEventListener('keydown',e=>{const k=e.key,d=e.shiftKey?10:1,[t0,t1]=winT();
+    if(k==='ArrowLeft'||k==='ArrowRight'){const base=DBG.cursor??Math.min(clock.t,t1);DBG.cursor=clamp(base+(k==='ArrowLeft'?-d:d),t0,clock.t)}
+    else if(k==='End')DBG.cursor=null;else if(k==='Home')DBG.cursor=t0;else return;e.preventDefault();dbgKick()});
+}
+
+/* ---------- 1. HTN graph ---------- */
+const nodeLabel=(n,B)=>n.type==='pause'?'PausePlan':n.type==='slot'?`${n.name} (${B.domain.slots[n.id]?'filled':'empty'})`:n.name;
+const gKids=(n,B)=>n.type==='slot'?(B.domain.slots[n.id]?[B.domain.slots[n.id]]:[]):(n.children||[]);
+const TW=new Map();function textW(g,s){let v=TW.get(s);if(v==null){v=g.measureText(s).width;TW.set(s,v)}return v}
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{TW.clear();DBG.g.fit=true;dbgKick()});
+function gLayout(g,B,expand){
+  const G=DBG.g,nodes=[],colW=[],ROW=24;let row=0;
+  const walk=(n,d,par,br)=>{if(d===1)br=par.children.indexOf(n);n.__p=par;n.__d=d;n.__br=br;nid(n);
+    const kids=gKids(n,B),u=G.user.get(n),open=kids.length>0&&(u!==undefined?u:(G.all||d===0||expand.has(n)));
+    const L={n,d,kids:kids.length,open,y:0,x:0,w:textW(g,nodeLabel(n,B))+42,ch:null};nodes.push(L);colW[d]=Math.max(colW[d]||0,L.w);
+    if(open){L.ch=kids.map(k=>walk(k,d+1,n,br));L.y=(L.ch[0].y+L.ch[L.ch.length-1].y)/2}else L.y=(row++)*ROW+ROW/2;
+    return L};
+  walk(B.domain.root,0,null,-1);
+  const xs=[0];for(let d=0;d<colW.length;d++)xs[d+1]=xs[d]+colW[d]+34;
+  const by=new Map();for(const L of nodes){L.x=xs[L.d];by.set(L.n,L)}
+  return {nodes,by,w:xs[colW.length]-6,h:row*ROW}
+}
+function glyph(g,type,x,y,col){g.save();g.fillStyle=col;g.strokeStyle=col;g.lineWidth=1.3;g.beginPath();
+  if(type==='select'){g.moveTo(x,y-5);g.lineTo(x+5,y);g.lineTo(x,y+5);g.lineTo(x-5,y);g.closePath();g.stroke()}
+  else if(type==='sequence'){g.moveTo(x-4,y-4.5);g.lineTo(x+4.5,y);g.lineTo(x-4,y+4.5);g.closePath();g.stroke()}
+  else if(type==='action'){g.arc(x,y,4,0,TAU);g.fill()}
+  else if(type==='slot'){g.setLineDash([2,1.5]);g.rect(x-4.5,y-4.5,9,9);g.stroke()}
+  else{g.fillRect(x-4,y-4.5,3,9);g.fillRect(x+1,y-4.5,3,9)}
+  g.restore()}
+function gState(B,snap){const c=B.ctx,pl=B.planner;
+  const path=snap?new Set(snap.act.map(id=>NODE_BY_ID.get(id)).filter(Boolean)):c.active;
+  const cur=snap?(NODE_BY_ID.get(snap.tid)||null):pl.current;
+  const q=new Map();if(!snap)pl.queue.forEach((t,i)=>q.set(t,i+1));
+  return {c,path,cur,q,ws:snap?snap.ws:null}}
+function gCenter(L,w,h){const G=DBG.g;G.px=Math.min(14,w-34-(L.x+L.w)*G.z);G.py=h*0.5-L.y*G.z} // (the node near the right edge, so its ancestors stay in view)
+function gVisible(L,w,h){const G=DBG.g,sx=G.px+L.x*G.z,sy=G.py+L.y*G.z;return sx>=6&&sx+L.w*G.z<=w-6&&sy>=14&&sy<=h-14}
+const neverPlanned=n=>n.type==='pause'?!(n.__p&&n.__p.__st&&n.__p.__st.planned):!(n.__st&&n.__st.planned);
+function drawGraph(){
+  const cv=$('#cGraph');if(!shown(cv))return;const F=cvFit(cv);if(!F)return;const {g,w,h}=F,G=DBG.g,B=selBrain();
+  if(G.brain!==B){G.brain=B;G.fit=true;G.lastCur=null;G.user=new WeakMap();if(DBG.sel&&!isInDomain(DBG.sel,B))DBG.sel=null}
+  const snap=scrubSample(),S=gState(B,snap);
+  const expand=new Set(S.path);for(let p=DBG.sel&&DBG.sel.__p;p;p=p.__p)expand.add(p);if(G.reveal)for(let p=G.reveal.__p;p;p=p.__p)expand.add(p);
+  const lay=G.lay=gLayout(g,B,expand);
+  const curL=S.cur&&lay.by.get(S.cur);
+  if(G.fit==='all'){const z=clamp(Math.min((w-28)/Math.max(1,lay.w),(h-28)/Math.max(1,lay.h)),0.3,1.1);G.z=z;G.px=14;G.py=Math.max(14,(h-lay.h*z)/2)}
+  else if(G.fit){G.z=1;G.px=14;G.py=Math.max(14,(h-lay.h)/2);if(curL&&!gVisible(curL,w,h))gCenter(curL,w,h)} // first view: readable size, on the running task
+  G.fit=false;
+  if(G.reveal){const L=lay.by.get(G.reveal);if(L&&!gVisible(L,w,h))gCenter(L,w,h);G.reveal=null}
+  else if(G.follow&&curL&&(S.cur!==G.lastCur||!gVisible(curL,w,h))&&!gp.pts.size)gCenter(curL,w,h);
+  G.lastCur=S.cur;
+  g.save();g.translate(G.px,G.py);g.scale(G.z,G.z);g.font=`11px ${MONO}`;g.textBaseline='middle';
+  for(const pass of [0,1])for(const L of lay.nodes)if(L.ch)for(const C of L.ch){const on=S.path.has(L.n)&&S.path.has(C.n);if(on!==!!pass)continue;
+    g.strokeStyle=on?brCol(C.n.__br):COL.line;g.lineWidth=on?2.2:1;g.beginPath();const x0=L.x+L.w,y0=L.y,x1=C.x,y1=C.y,mx=x1-16,dy=y1-y0,sg=Math.sign(dy),r=Math.min(5,Math.abs(dy)/2);
+    g.moveTo(x0,y0);if(Math.abs(dy)<0.5)g.lineTo(x1,y1);else{g.lineTo(mx-r,y0);g.quadraticCurveTo(mx,y0,mx,y0+sg*r);g.lineTo(mx,y1-sg*r);g.quadraticCurveTo(mx,y1,mx+r,y1);g.lineTo(x1,y1)}g.stroke()}
+  const valid=new Map();withWS(S.c,S.ws,()=>{for(const L of lay.nodes){const n=L.n;if(!n.conds||!n.conds.length){valid.set(n,null);continue}
+    let ok=true;try{ok=n.conds.every(([,fn])=>fn(S.c))}catch(e){ok=false}valid.set(n,ok)}});
+  for(const L of lay.nodes){const n=L.n,on=S.path.has(n),isCur=n===S.cur,v=valid.get(n),bc=brCol(n.__br),x=L.x,y=L.y-9,bw=L.w;
+    g.globalAlpha=!on&&neverPlanned(n)?0.42:1;
+    rr(g,x,y,bw,18,4);g.fillStyle=on?mixHex(COL.panel2,bc,0.3):n===DBG.hov?mixHex(COL.panel2,COL.fg,0.12):COL.panel2;g.fill();
+    g.lineWidth=isCur?2:on?1.5:1;g.strokeStyle=isCur?COL.accent:on?bc:COL.line;g.stroke();
+    if(n===DBG.sel){g.save();g.lineWidth=1.5;g.strokeStyle=COL.fg;g.setLineDash([3,2]);rr(g,x-3,y-3,bw+6,24,6);g.stroke();g.restore()}
+    glyph(g,n.type,x+10,L.y,v===false?COL.muted:COL.fg);
+    g.textAlign='left';g.fillStyle=isCur?COL.accent:v===false?COL.muted:COL.fg;g.font=isCur||on?`500 11px ${MONO}`:`11px ${MONO}`;g.fillText(nodeLabel(n,B),x+20,L.y+0.5);
+    if(v!==null){g.beginPath();g.arc(x+bw-9,L.y,3.3,0,TAU);if(v){g.fillStyle=COL.ok;g.fill()}else{g.lineWidth=1.5;g.strokeStyle=COL.alert;g.stroke()}}
+    g.font=`10.5px ${MONO}`;
+    if(L.kids&&!L.open){g.fillStyle=COL.muted;g.fillText(`+${L.kids}`,x+bw+5,L.y+0.5)}
+    if(S.q.has(n)){g.fillStyle=COL.accent;g.fillText(`#${S.q.get(n)}`,x+bw+5,L.y+0.5)}
+  }
+  g.globalAlpha=1;g.restore();
+  const P=$('#gPulse');if(curL){const z=G.z,sx=G.px+curL.x*z,sy=G.py+(curL.y-9)*z;
+    if(sx+curL.w*z>0&&sx<w&&sy+18*z>0&&sy<h){P.style.display='block';P.style.transform=`translate(${(sx-2).toFixed(1)}px,${(sy-2).toFixed(1)}px)`;P.style.width=(curL.w*z+4)+'px';P.style.height=(18*z+4)+'px'}else P.style.display='none'}
+  else P.style.display='none';
+  setHTML($('#gInfo'),`${esc(B.p.label)}${snap?` · <span style="color:var(--accent)">recorded path at t ${fmtT(snap.t)}</span>`:' · live'} · ${lay.nodes.length} shown · ${Math.round(G.z*100)}%`);
+}
+function isInDomain(n,B){let p=n;while(p&&p.__p)p=p.__p;return p===B.domain.root||Object.values(B.domain.slots).includes(p)}
+const cg=$('#cGraph'),gp={pts:new Map(),down:null,moved:false,pinch:0};
+const pdist=()=>{const a=[...gp.pts.values()];return a.length<2?0:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)};
+function gHit(mx,my){const G=DBG.g,L=G.lay;if(!L)return null;const x=(mx-G.px)/G.z,y=(my-G.py)/G.z;
+  for(const N of L.nodes)if(y>=N.y-11&&y<=N.y+11&&x>=N.x-3&&x<=N.x+N.w+(N.kids&&!N.open?32:3))return {N,badge:x>N.x+N.w};return null}
+function zoomAt(mx,my,k){const G=DBG.g,z=clamp(G.z*k,0.3,2.5);G.px=mx-(mx-G.px)*z/G.z;G.py=my-(my-G.py)*z/G.z;G.z=z;dbgKick()}
+function setFollow(v){DBG.g.follow=v;const b=$('#gFollow');b.classList.toggle('on',v);b.setAttribute('aria-pressed',v)}
+function toggleNode(N){DBG.g.user.set(N.n,!N.open);dbgKick()}
+function selectNode(n){DBG.sel=n;setSub('inspect');dbgRender()}
+function revealNode(n){DBG.sel=n;DBG.g.reveal=n;setFollow(false)} // (keyboard / links: bring the node into view; stop following the running task)
+function nodeTip(N){const n=N.n,B=selBrain(),st=n.__st||{planned:0,run:0},c=B.ctx,snap=scrubSample();
+  let v=null;if(n.conds&&n.conds.length)v=withWS(c,snap&&snap.ws,()=>{try{return n.conds.every(([,fn])=>fn(c))}catch(e){return false}});
+  return `<b>${esc(nodeLabel(n,B))}</b> <span class="m">${TYPE_K[n.type]}${n.tag?' · '+esc(n.tag):''}</span><br>${v===null?'<span class="m">no conditions</span>':v?'<span style="color:var(--ok)">✓ conditions hold now</span>':'<span style="color:var(--alert)">✗ a condition fails now</span>'}<br>planned ${st.planned}× · ran ${st.run}×${N.kids?`<br><span class="m">${N.open?'double-click to fold':`+${N.kids}: click to unfold`}</span>`:''}`}
+cg.addEventListener('pointerdown',e=>{try{cg.setPointerCapture(e.pointerId)}catch(_){}gp.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(gp.pts.size===1){gp.down={x:e.clientX,y:e.clientY};gp.moved=false}else gp.pinch=pdist()});
+cg.addEventListener('pointermove',e=>{const r=cg.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,p=gp.pts.get(e.pointerId);
+  if(p){const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
+    if(gp.pts.size>=2){const d=pdist();if(gp.pinch)zoomAt(mx,my,d/gp.pinch);gp.pinch=d;gp.moved=true;return}
+    if(Math.hypot(e.clientX-gp.down.x,e.clientY-gp.down.y)>4)gp.moved=true;
+    if(gp.moved){DBG.g.px+=dx;DBG.g.py+=dy;setFollow(false);cg.classList.add('panning');hideTip();dbgKick();return}}
+  const hh=gHit(mx,my),n=hh?hh.N.n:null;if(n!==DBG.hov){DBG.hov=n;dbgKick()}
+  if(hh&&e.pointerType!=='touch')showTip(nodeTip(hh.N),e.clientX,e.clientY);else if(!hh)hideTip()});
+const gUp=e=>{const had=gp.pts.delete(e.pointerId);cg.classList.remove('panning');if(!had||gp.pts.size)return;gp.pinch=0;
+  if(!gp.moved&&e.type==='pointerup'){const r=cg.getBoundingClientRect(),hh=gHit(e.clientX-r.left,e.clientY-r.top);
+    if(hh){if(hh.badge&&hh.N.kids)toggleNode(hh.N);else{selectNode(hh.N.n);if(e.pointerType==='touch')showTip(nodeTip(hh.N)+'<br><span class="m">Details tab: full inspector</span>',e.clientX,e.clientY)}}}};
+cg.addEventListener('pointerup',gUp);cg.addEventListener('pointercancel',gUp);
+cg.addEventListener('pointerleave',()=>{if(DBG.hov){DBG.hov=null;dbgKick()}hideTip()});
+cg.addEventListener('dblclick',e=>{const r=cg.getBoundingClientRect(),hh=gHit(e.clientX-r.left,e.clientY-r.top);if(hh&&hh.N.kids&&!hh.badge)toggleNode(hh.N)});
+cg.addEventListener('wheel',e=>{e.preventDefault();const r=cg.getBoundingClientRect();zoomAt(e.clientX-r.left,e.clientY-r.top,Math.exp(-e.deltaY*0.0015))},{passive:false});
+cg.addEventListener('keydown',e=>{const L=DBG.g.lay;if(!L)return;const list=L.nodes,i=list.findIndex(N=>N.n===DBG.sel),N=list[i];let nx=null;
+  switch(e.key){
+    case 'ArrowDown':nx=list[Math.min(list.length-1,i+1)];break;
+    case 'ArrowUp':nx=list[Math.max(0,i-1)];break;
+    case 'ArrowRight':if(N&&N.kids&&!N.open)toggleNode(N);else if(N&&N.ch)nx=N.ch[0];break;
+    case 'ArrowLeft':if(N&&N.open&&N.kids)toggleNode(N);else if(N&&N.n.__p)nx=L.by.get(N.n.__p);break;
+    case 'Enter':case ' ':if(N&&N.kids)toggleNode(N);break;
+    case 'Home':nx=list[0];break;
+    case 'f':case 'F':DBG.g.fit='all';break;
+    case '+':case '=':zoomAt(cg.clientWidth/2,cg.clientHeight/2,1.2);break;
+    case '-':zoomAt(cg.clientWidth/2,cg.clientHeight/2,1/1.2);break;
+    default:return}
+  e.preventDefault();if(!N&&!nx)nx=list[0];if(nx){revealNode(nx.n);setSub('inspect')}dbgRender()});
+$('#gIn').onclick=()=>zoomAt(cg.clientWidth/2,cg.clientHeight/2,1.25);
+$('#gOut').onclick=()=>zoomAt(cg.clientWidth/2,cg.clientHeight/2,0.8);
+$('#gFit').onclick=()=>{DBG.g.fit='all';setFollow(false);dbgKick()};
+$('#gFollow').onclick=()=>{setFollow(!DBG.g.follow);DBG.g.lastCur=null;dbgKick()};
+$('#gAll').onclick=e=>{const G=DBG.g;G.all=!G.all;G.user=new WeakMap();e.currentTarget.textContent=G.all?'Fold to plan':'Unfold all';e.currentTarget.setAttribute('aria-pressed',G.all);G.fit=true;dbgKick()};
+$('#gLeg').innerHTML=['select','sequence','action','slot','pause'].map(t=>`<span>${glyphSVG(t)}${{select:'Select',sequence:'Sequence',action:'Action',slot:'Slot',pause:'PausePlan'}[t]}</span>`).join('')+
+  `<span><i style="background:${BR_COL[4]}"></i>on the plan path (branch colour)</span><span><i style="border:2px solid var(--accent);background:none;border-radius:3px"></i>running (pulsing)</span>`+
+  `<span><i style="background:var(--ok);border-radius:50%;width:8px;height:8px"></i>conditions hold</span><span><i style="border:1.5px solid var(--alert);border-radius:50%;width:8px;height:8px;background:none"></i>a condition fails</span><span style="opacity:.5">faded: never in a plan yet</span><span>+N folded · #k queued</span>`;
+
+/* ---------- inspector ---------- */
+function inspectorHTML(){const B=selBrain(),c=B.ctx,pl=B.planner,sn=scrubSample(),n=DBG.sel||(sn?NODE_BY_ID.get(sn.tid):pl.current);
+  if(!n)return `<p class="note">Click a node in the graph (or focus the graph and use the arrow keys) to see its conditions with live pass/fail and the world-state bytes they read, its executing conditions, effects and run statistics.</p>`;
+  const snap=scrubSample(),ws=snap?snap.ws:null,wsv=ws||c.ws;
+  const path=[];for(let p=n.__p;p;p=p.__p)path.unshift(`<button class="linkb" data-nid="${nid(p)}">${esc(nodeLabel(p,B))}</button>`);
+  const rd=reads=>reads.length?reads.map(i=>`<span class="chip" title="world-state byte ${i}">${esc(WS_NAMES[i])} = ${esc(wsLbl(i,wsv[i]))}</span>`).join(''):'<span class="chip" title="this condition reads body, belief or place data, not world-state bytes">reads no world-state byte</span>';
+  const clist=(arr,exec)=>arr&&arr.length?`<ul class="clist">${withWS(c,ws,()=>arr.map(([label,fn,urg])=>{const r=evalCond(fn,c);
+      return `<li><span class="pf ${r.ok?'ok':'bad'}">${r.ok?'✓':'✗'}</span><span>${esc(label)} <span class="chip ${r.ok?'ok':'bad'}">${r.ok?'pass':'fail'}</span>${exec&&urg?' <span class="chip bad" title="aborts even a committed task">urgent</span>':''}</span><span class="rd">${rd(r.reads)}</span></li>`}).join(''))}</ul>`
+    :`<p class="note">none${exec?' (once started the task only ends by finishing, failing, or a replan that wins)':' (always valid)'}</p>`;
+  const st=nst(n),running=!snap&&pl.current===n,runT=running?clock.t-(pl.segT??pl.taskStart):0;
+  const flags=[];if(running)flags.push(`<span class="chip fill">running · ${fmtDur(runT)}</span>`);
+  const S=gState(B,snap);if(S.path.has(n)&&!running)flags.push('<span class="chip acc">on the plan path</span>');if(S.q.has(n))flags.push(`<span class="chip acc">queued #${S.q.get(n)}</span>`);
+  if(neverPlanned(n))flags.push('<span class="chip">never in a plan yet</span>');
+  const kids=gKids(n,B);
+  const kidsHTML=kids.length?`<div class="dsec"><h4>${n.type==='select'?'Children (tried in order: MTR index)':n.type==='sequence'?'Steps (all must decompose)':'Contents'}</h4><ul class="clist">${withWS(c,ws,()=>kids.map((k,i)=>{let v=null;if(k.conds&&k.conds.length){try{v=k.conds.every(([,fn])=>fn(c))}catch(e){v=false}}
+      return `<li><span class="pf ${v===false?'bad':'ok'}">${v===false?'✗':'✓'}</span><span>${i}. ${glyphSVG(k.type)} <button class="linkb" data-nid="${nid(k)}">${esc(nodeLabel(k,B))}</button> <span class="chip">planned ${k.__st?k.__st.planned:0}×</span>${S.path.has(k)?' <span class="chip acc">on path</span>':''}</span></li>`}).join(''))}</ul></div>`:'';
+  const effs=n.effects&&n.effects.length?`<ul class="clist">${n.effects.map(e=>`<li><span class="pf">•</span><span>${esc(e.name)} <span class="chip acc">${e.type}</span> <span style="color:var(--muted)">${EFF_DESC[e.type]||''}</span></span></li>`).join('')}</ul>`:'<p class="note">none</p>';
+  return `${DBG.sel?'':'<p class="note" style="margin-bottom:6px">Showing the running task. Click a node in the graph to inspect another one.</p>'}<div class="ihead">${glyphSVG(n.type)}<b>${esc(nodeLabel(n,B))}</b><span class="chip">${TYPE_K[n.type]}</span>${n.tag?`<span class="chip">${esc(n.tag)}</span>`:''}${flags.join('')}</div>
+    <div class="path" style="margin-top:2px">${path.join(' › ')||'(root)'}</div>
+    ${snap?`<p class="note" style="margin-top:6px;color:var(--accent)">Time cursor at t ${fmtT(snap.t)}: conditions read the world-state bytes recorded then; other inputs (positions, beliefs) are live.</p>`:''}
+    <div class="dsec"><h4>Conditions${snap?'':' (live)'}</h4>${clist(n.conds,false)}</div>
+    ${n.type==='action'?`<div class="dsec"><h4>Executing conditions${snap?'':' (live)'}</h4>${clist(n.exec,true)}</div><div class="dsec"><h4>Effects</h4>${effs}</div>`:''}
+    <div class="dsec"><h4>Stats this session</h4><div class="kv">
+      <span>times planned</span><span>${st.planned} <span style="color:var(--muted)">(on an accepted plan's path)</span></span>
+      ${n.type==='action'?`<span>times run</span><span>${st.run}</span><span>total run time</span><span>${fmtDur(st.time+runT)}${st.run?` · mean ${fmtDur((st.time+runT)/st.run)}`:''}</span>
+      <span>outcomes</span><span>${st.ok} succeeded · ${st.fail} failed · ${st.abort} aborted/interrupted</span><span>last started</span><span>${st.last>=0?`t ${fmtT(st.last)}`:'never'}</span>`:''}
+      <span>condition failures</span><span>${st.cf} while planning</span></div></div>
+    ${kidsHTML}`;
+}
+
+/* ---------- decision trace ---------- */
+function curRep(){const R=recOf();if(!R||!R.replans.len)return null;const first=R.replans.get(0);
+  if(DBG.repFollow||!DBG.rep||DBG.rep.slot!==R.slot)return R.replans.last();return DBG.rep.id<first.id?first:DBG.rep}
+function selectRep(rec){if(rec.slot!==ui.sel)selectSnake(rec.slot);DBG.rep=rec;DBG.repFollow=false;syncRepNav();setSub('trace');if(isPhone())setPane('detail');dbgRender()}
+function syncRepNav(){const b=$('#rLatest');b.classList.toggle('on',DBG.repFollow);b.setAttribute('aria-pressed',DBG.repFollow)}
+const mtrStr=(m,k)=>m&&m.length?'['+m.map((v,i)=>`<i class="${i===k?'d':''}">${v}</i>`).join(', ')+']':'[ ]';
+function traceHTML(rec){
+  const R=recOf(),fin=rec.final||new Set(),bc=brCol(rec.newMtr.length?rec.newMtr[0]:-1);
+  const trig=rec.changes&&rec.changes.length?rec.changes.map(([i,a,b,t],j)=>`<span class="chip ${j===rec.changes.length-1?'fill':'acc'}" title="changed at t ${fmtT(t)}">${esc(WS_NAMES[i])}: ${esc(wsLbl(i,a))} → ${esc(wsLbl(i,b))}</span>`).join(' '):'';
+  const out=rec.accepted?'<span class="chip ok">ACCEPTED</span>':rec.newMtr.length||rec.plan.length?'<span class="chip bad">REJECTED</span>':'<span class="chip bad">NO PLAN</span>';
+  const lines=rec.log.map(e=>{const onF=!!(e.node&&fin.has(e.node));let o,cl;
+    switch(e.res){
+      case 'condition failed':o=`✗ condition failed: “${e.cond??'?'}”`;cl='bad';break;
+      case 'select':o=onF?`✓ selected → ${e.pick}`:e.pick?`decomposed via ${e.pick}, then discarded`:'✗ no child decomposed';cl=onF?'ok':'mut';break;
+      case 'sequence':o=onF?'✓ sequence decomposed':'tried';cl=onF?'ok':'mut';break;
+      case 'sequence rolled back':o='↺ sequence rolled back';cl='warn';break;
+      case '→ plan':o=onF?'→ plan':'→ plan, then discarded';cl=onF?'ok':'mut';break;
+      case 'partial plan':o='‖ partial plan: the rest is planned when this part is done';cl='par';break;
+      case 'slot':o=onF?'✓ slot filled':'slot filled';cl=onF?'ok':'mut';break;
+      default:o=e.res;cl='mut'}
+    return `<div class="tl${onF?' fin':''}" style="--d:${e.depth}${onF?`;--bc:${bc}`:''}"><span class="k">${TYPE_K[e.type]||''}</span><span>${esc(e.name)}</span><span class="o ${cl}">${esc(o)}</span></div>`}).join('');
+  const res=rec.accepted?`<ol class="qlist">${(rec.result||rec.plan).map((t,i)=>`<li>${i===0&&rec.cont?'▶ ':''}${esc(t)}</li>`).join('')}${rec.partial.map(p=>`<li style="color:var(--scent)">‖ resume ${esc(p)}</li>`).join('')}</ol>${rec.cont?'<p class="note">Plan repair: the running task carries on under the new plan (no restart).</p>':''}`
+    :`<p class="note">Running plan kept: ${rec.running&&rec.running.length?rec.running.map(esc).join(' → '):'—'}</p>${rec.plan.length?`<p class="note">The rejected plan would have been: ${rec.plan.map(esc).join(' → ')}</p>`:''}`;
+  const wsg=`<div class="wsg">${WS_NAMES.map((nm,i)=>`<div class="${rec.changes&&rec.changes.some(ch=>ch[0]===i)?'ch':''}"><span>${nm}</span><span>${esc(wsLbl(i,rec.ws[i]))}</span></div>`).join('')}</div>`;
+  return `<div class="ihead"><b style="font-size:14px">${rec.kind==='resume'?'Partial-plan resume':'Replan'} #${rec.id+1}</b>${out}<span class="chip">t ${fmtT(rec.t)} · ${fmtDay(rec.day)}</span><span class="chip">${esc(R?R.label:'')}</span></div>
+    <div class="dsec"><h4>Trigger</h4>${trig?`<div class="row">${trig}</div><p class="note" style="margin-top:3px">${esc(rec.reason)}</p>`:`<p class="note" style="color:var(--fg)">${esc(rec.reason)}</p>`}</div>
+    <div class="dsec"><h4>MTR comparison</h4><div class="mtrtab">
+      <span style="color:var(--muted)">${rec.running&&rec.running.length?'running':'previous'}</span><span class="v">${mtrStr(rec.oldMtr,rec.diffAt)} ${rec.oldNames&&rec.oldNames.length?esc(rec.oldNames.join(' › ')):'(no plan)'}</span>
+      <span style="color:var(--muted)">new</span><span class="v">${mtrStr(rec.newMtr,rec.diffAt)} ${rec.newNames.length?esc(rec.newNames.join(' › ')):'(none)'}</span></div>
+      <p class="note" style="margin-top:4px;color:var(--fg)">${esc(rec.why||'')}</p></div>
+    <div class="dsec"><h4>${rec.accepted?'Resulting plan queue':'Result'}</h4>${res}</div>
+    <div class="dsec"><h4>Decomposition log <span style="text-transform:none;letter-spacing:0">(${rec.log.length} steps${rec.log.length>=400?', capped at 400':''}; highlighted: the path found)</span></h4><div class="trace">${lines||'<p class="note">empty</p>'}</div></div>
+    <details class="dsec"><summary>World state at this replan</summary>${wsg}</details>`;
+}
+function renderTrace(){const R=recOf(),rec=curRep();
+  if(!rec){setHTML($('#rBody'),'<p class="note">No replans recorded yet for this snake.</p>');$('#rLbl').textContent='';return}
+  const k=rec.id-R.replans.get(0).id;$('#rLbl').textContent=`${k+1} of ${R.replans.len} · t ${fmtT(rec.t)}${DBG.repFollow?' · following the latest':''}`;
+  $('#rPrev').disabled=k<=0;$('#rNext').disabled=k>=R.replans.len-1;
+  setHTML($('#rBody'),traceHTML(rec))}
+const stepRep=d=>{const R=recOf(),rec=curRep();if(!rec)return;const k=clamp(rec.id-R.replans.get(0).id+d,0,R.replans.len-1);DBG.rep=R.replans.get(k);DBG.repFollow=false;syncRepNav();dbgRender()};
+$('#rPrev').onclick=()=>stepRep(-1);$('#rNext').onclick=()=>stepRep(1);
+$('#rLatest').onclick=()=>{DBG.repFollow=!DBG.repFollow;if(!DBG.repFollow)DBG.rep=curRep()||null;else DBG.rep=null;syncRepNav();dbgRender()};
+
+/* ---------- snapshot at the cursor ---------- */
+function snapHTML(){const R=recOf();if(!R||!R.samples.len)return '<p class="note">No samples yet.</p>';
+  const s=scrubSample()||R.samples.last(),k=R.samples.find(s.t),prev=k>0?R.samples.get(Math.max(0,k-5)):null;
+  const DN=['hunger','digestion','body heat','fatigue','stress','condition','preferred heat','appetite'];
+  const meters=DN.map((nm,i)=>{const v=s.d[i];if(v==null||isNaN(v))return '';const f=i===7?(v-0.35)/(2.2-0.35):v;
+    return `<span>${nm}</span><span class="meter"><i style="width:${(clamp(f,0,1)*100).toFixed(0)}%;background:${[BR_COL[2],BR_COL[5],BR_COL[4],BR_COL[7],BR_COL[1],BR_COL[8],BR_COL[4],BR_COL[3]][i]}"></i></span><span class="num">${v.toFixed(2)}</span>`}).join('');
+  const bel=s.bel.slice().sort((a,b)=>b[1]-a[1]).map(b=>`<span class="sw" style="background:${b[3]==='rival'?COL.fg:b[3]}"></span><span class="${b[0]===s.tgt?'tgt':''}">${esc(b[0])}${b[0]===s.tgt?' ◀ target':''}${b[3]==='rival'?' <span class="st">rival</span>':''}</span><span>${b[1].toFixed(2)}${b[2]?`<span class="chan c${b[2]}">${['','scent','vib','sight'][b[2]]}</span>`:'<span class="st"> memory</span>'}</span>`).join('');
+  const wsg=`<div class="wsg">${WS_NAMES.map((nm,i)=>`<div class="${prev&&prev.ws[i]!==s.ws[i]?'ch':''}" title="${prev&&prev.ws[i]!==s.ws[i]?`changed from ${esc(wsLbl(i,prev.ws[i]))} in the 5 s before`:''}"><span>${nm}</span><span>${esc(wsLbl(i,s.ws[i]))}</span></div>`).join('')}</div>`;
+  return `<div class="ihead"><b style="font-size:14px">${DBG.cursor!=null?'Recorded snapshot':'Latest sample'}</b><span class="chip ${DBG.cursor!=null?'acc':''}">t ${fmtT(s.t)}${DBG.cursor!=null?` · ${fmtT(Math.max(0,clock.t-s.t))} ago`:''}</span><span class="chip">${fmtDay(s.day)}</span>${s.state?`<span class="chip bad">${s.state}</span>`:''}</div>
+    ${DBG.cursor==null?'<p class="note" style="margin-top:4px">Click or drag on the timeline (or any chart) to move the time cursor and see what was recorded then. Snapshots are taken every sim second.</p>':''}
+    <div class="dsec kv"><span>task</span><span><b>${esc(s.task||'(planning)')}</b>${s.task?` · ${fmtDur(s.el)} in`:''}</span>
+      <span>branch</span><span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${brCol(s.br)}"></i> ${esc(brName(s.br))}</span>
+      <span>intent</span><span>${esc(wsLbl(WS.Intent,s.ws[WS.Intent]))}</span>
+      <span>MTR</span><span>[${s.mtr.join(', ')}] ${esc(s.names.join(' › ')||'no plan')}</span>
+      <span>queue</span><span>${s.q.length?s.q.map(esc).join(' → '):'empty'}${s.pa.length?` · ‖ ${s.pa.map(esc).join(', ')}`:''}</span>
+      <span>target</span><span>${esc(s.tgt||'none')}</span></div>
+    <div class="dsec"><h4>Drives</h4><div class="dmeter">${meters}</div></div>
+    <div class="dsec"><h4>Beliefs</h4><div class="prey">${bel||'<span></span><span class="st">nothing sensed</span><span></span>'}</div></div>
+    <div class="dsec"><h4>World state <span style="text-transform:none;letter-spacing:0">(highlight: changed in the 5 s before)</span></h4>${wsg}</div>`;
+}
+
+/* ---------- 2. timeline (Gantt) ---------- */
+const TLH={w:16,m:14,b:12,t:20,gap:12};
+function mark(g,kind,x,y){g.save();
+  if(kind==='rep+'){g.fillStyle=COL.accent;g.beginPath();g.moveTo(x-4.5,y-5);g.lineTo(x+4.5,y-5);g.lineTo(x,y+4);g.closePath();g.fill()}
+  else if(kind==='rep-'){g.strokeStyle=COL.muted;g.lineWidth=1.2;g.beginPath();g.arc(x,y,2.6,0,TAU);g.stroke()}
+  else if(kind==='exec'||kind==='dequeue'){g.strokeStyle=COL.alert;g.lineWidth=2;g.beginPath();g.moveTo(x-3.5,y-3.5);g.lineTo(x+3.5,y+3.5);g.moveTo(x+3.5,y-3.5);g.lineTo(x-3.5,y+3.5);g.stroke()}
+  else if(kind==='fail'){g.fillStyle=COL.alert;g.fillRect(x-3.5,y-3.5,7,7)}
+  else if(kind==='kill'){g.fillStyle=COL.accent;g.strokeStyle=COL.bg;g.lineWidth=1.5;g.beginPath();g.moveTo(x,y-6);g.lineTo(x+6,y);g.lineTo(x,y+6);g.lineTo(x-6,y);g.closePath();g.fill();g.stroke()}
+  else{g.fillStyle=COL.fg;g.beginPath();g.moveTo(x,y-3.5);g.lineTo(x+3.5,y);g.lineTo(x,y+3.5);g.lineTo(x-3.5,y);g.closePath();g.fill()}
+  g.restore()}
+const markSVG=k=>`<svg width="14" height="14" viewBox="-7 -7 14 14" aria-hidden="true">${k==='rep+'?`<path d="M-4.5-5H4.5L0 4Z" fill="${COL.accent}"/>`:k==='rep-'?`<circle r="2.6" fill="none" stroke="${COL.muted}" stroke-width="1.2"/>`:k==='exec'?`<path d="M-3.5-3.5L3.5 3.5M3.5-3.5L-3.5 3.5" stroke="${COL.alert}" stroke-width="2"/>`:k==='fail'?`<rect x="-3.5" y="-3.5" width="7" height="7" fill="${COL.alert}"/>`:k==='kill'?`<path d="M0-6L6 0L0 6L-6 0Z" fill="${COL.accent}"/>`:`<path d="M0-3.5L3.5 0L0 3.5L-3.5 0Z" fill="${COL.fg}"/>`}</svg>`;
+function drawTimeline(){
+  const cv=$('#cTL');if(!shown(cv))return;const recs=world.recs||[],per=TLH.m+TLH.b+TLH.t+TLH.gap,H=4+TLH.w+recs.length*per+16;
+  const F=cvFit(cv,H);if(!F)return;const {g,w}=F,A=tAxis(w),hits=DBG.hits.tl=[],bot=H-18;
+  tGrid(g,A,2,bot);g.textAlign='right';g.font=`10.5px ${MONO}`;
+  let y=4;g.fillStyle=COL.muted;g.fillText(TL_L<110?'world':'world events',A.x0-8,y+TLH.w/2);
+  if(world.evlog){const E=world.evlog;for(let k=Math.max(0,E.find(A.t0));k<E.len;k++){const ev=E.get(k);if(ev.t<A.t0||ev.slot>=0)continue;const x=A.X(ev.t);mark(g,'event',x,y+TLH.w/2);hits.push({x,y:y+TLH.w/2,type:'ev',ev})}}
+  y+=TLH.w;const sr=curRep();
+  recs.forEach((R,si)=>{const sel=si===ui.sel,ym=y+TLH.m/2,yb=y+TLH.m,yt=yb+TLH.b+2;
+    if(sel){g.fillStyle=hexA(COL.accent,0.06);g.fillRect(0,y-3,w,per-TLH.gap+6)}
+    g.textAlign='right';g.font=`10.5px ${MONO}`;g.fillStyle=COL.muted;g.fillText(TL_L<110?'marks':'replans · marks',A.x0-8,ym);
+    g.font=`600 11px ${MONO}`;g.fillStyle=sel?COL.accent:COL.fg;g.fillText((sel?'▸ ':'')+(R.short||R.label),A.x0-8,yb+TLH.b/2);
+    g.font=`10.5px ${MONO}`;g.fillStyle=COL.muted;g.fillText('tasks',A.x0-8,yt+TLH.t/2);
+    // task bars + merged branch bars
+    const T=R.tasks;let run=null;const flushB=()=>{if(!run)return;const x0=run.x0,x1=run.x1,bw=Math.max(1,x1-x0-(x1-x0>4?2:0));g.fillStyle=brCol(run.br);g.fillRect(x0,yb,bw,TLH.b);if(run.br===0)hatch(g,x0,yb,bw,TLH.b);
+      const nm=brName(run.br);if(bw>textW(g,nm)+8){g.fillStyle=COL.bg;g.textAlign='left';g.font=`500 10px ${MONO}`;g.fillText(nm,x0+4,yb+TLH.b/2+0.5);g.font=`10.5px ${MONO}`}
+      hits.push({x0,x1,y0:yb,y1:yb+TLH.b,type:'br',br:run.br,t0:run.t0,t1:run.t1,R});run=null};
+    for(let k=Math.max(0,T.find(A.t0));k<T.len;k++){const s=T.get(k),t1=s.t1??(s===R.seg?clock.t:s.t);if(t1<A.t0||s.t>A.t1)continue;
+      const x0=A.X(Math.max(s.t,A.t0)),x1=A.X(Math.min(t1,A.t1)),bw=Math.max(1,x1-x0-(x1-x0>4?2:0));
+      g.fillStyle=brCol(s.br);g.fillRect(x0,yt,bw,TLH.t);if(s.br===0)hatch(g,x0,yt,bw,TLH.t);
+      if(bw>textW(g,s.name)+8){g.fillStyle=COL.bg;g.textAlign='left';g.font=`500 10.5px ${MONO}`;g.fillText(s.name,x0+4,yt+TLH.t/2+0.5);g.font=`10.5px ${MONO}`}
+      hits.push({x0,x1,y0:yt,y1:yt+TLH.t,type:'seg',s,t1,R});
+      if(run&&run.br===s.br&&s.t-run.t1<1.5){run.x1=x1;run.t1=t1}else{flushB();run={br:s.br,x0,x1,t0:s.t,t1}}}
+    flushB();
+    const P=R.replans;for(let k=Math.max(0,P.find(A.t0));k<P.len;k++){const rec=P.get(k);if(rec.t<A.t0)continue;const x=A.X(rec.t);
+      if(rec===sr&&sel){g.fillStyle=hexA(COL.fg,0.8);g.fillRect(Math.round(x),y,1,per-TLH.gap)}
+      mark(g,rec.accepted?'rep+':'rep-',x,ym);hits.push({x,y:ym,type:'rep',rec})}
+    const M=R.marks;for(let k=Math.max(0,M.find(A.t0));k<M.len;k++){const m=M.get(k);if(m.t<A.t0)continue;const x=A.X(m.t);mark(g,m.kind,x,ym);hits.push({x,y:ym,type:'mark',m})}
+    y+=per});
+  tTicks(g,A,bot+1);tCursor(g,A,2,bot);
+}
+function tlHit(x,y){let best=null,bd=8;for(const H of DBG.hits.tl)if(H.x!=null){const d=Math.hypot(x-H.x,y-H.y);if(d<bd){bd=d;best=H}}
+  if(best)return best;for(const H of DBG.hits.tl)if(H.x0!=null&&x>=H.x0-1&&x<=H.x1+1&&y>=H.y0&&y<=H.y1)return H;return null}
+function repTip(rec){const tr=rec.changes&&rec.changes.length?rec.changes.slice(-3).map(([i,a,b])=>`${WS_NAMES[i]}: ${wsLbl(i,a)} → ${wsLbl(i,b)}`).join('<br>'):esc(rec.reason);
+  return `<b>${rec.kind==='resume'?'Partial-plan resume':'Replan'} ${rec.accepted?'<span style="color:var(--ok)">accepted</span>':'<span style="color:var(--alert)">rejected</span>'}</b> <span class="m">t ${fmtT(rec.t)}</span><br><span class="m">trigger</span> ${tr}<br>→ ${esc(rec.newNames.join(' › ')||'(no plan)')}<br><span class="m">${esc(rec.why||'')}</span><br><span class="hl">click: open the decision trace</span>`}
+timeChart($('#cTL'),(x,y)=>{const H=tlHit(x,y);if(!H)return null;
+  if(H.type==='seg'){const s=H.s;return `<b>${esc(s.name)}</b> <span class="m">${esc(H.R.short)}</span><br><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${brCol(s.br)}"></i> ${esc(brName(s.br))} · ${fmtDur(H.t1-s.t)}<br><span class="m">t ${fmtT(s.t)} – ${fmtT(H.t1)} · ended: ${esc(s.end||'still running')}</span>`}
+  if(H.type==='br')return `<b>${esc(brName(H.br))}</b> branch <span class="m">${esc(H.R.short)}</span><br>${fmtDur(H.t1-H.t0)} · t ${fmtT(H.t0)} – ${fmtT(H.t1)}`;
+  if(H.type==='rep')return repTip(H.rec);
+  if(H.type==='mark'){const m=H.m;return `<b>${{exec:'Executing condition failed: task aborted',dequeue:'Condition failed on dequeue',fail:'Task failed',kill:'Kill',event:'Event'}[m.kind]}</b> <span class="m">t ${fmtT(m.t)}</span><br>${esc(m.text)}`}
+  if(H.type==='ev')return `<b>World event</b> <span class="m">t ${fmtT(H.ev.t)}</span><br>${esc(H.ev.text)}`;return null},
+  (x,y)=>{const H=tlHit(x,y);if(H&&H.type==='rep'){selectRep(H.rec);return true}
+    if(H&&H.type==='seg'&&H.R===recOf()){const n=NODE_BY_ID.get(H.s.nid);if(n&&isInDomain(n,selBrain()))revealNode(n)}return false});
+function tlLegend(){const names=world.brain?world.brain.domain.root.children.map((_,i)=>brName(i)):[];
+  $('#tlLeg').innerHTML=`<span>${markSVG('rep+')}replan accepted</span><span>${markSVG('rep-')}rejected</span><span>${markSVG('exec')}exec-condition abort</span><span>${markSVG('fail')}task failed</span><span>${markSVG('kill')}kill</span><span>${markSVG('event')}event</span><span style="color:var(--accent)">▼ line: cursor</span>`+
+    names.map((nm,i)=>`<span><i style="background:${BR_COL[i]};${i===0?`background-image:repeating-linear-gradient(135deg,transparent 0 3px,${hexA(COL.bg,0.55)} 3px 4.5px)`:''}"></i>${esc(nm)}</span>`).join('')}
+
+/* ---------- 4. world-state history ---------- */
+const WS_RH=11;
+const seqCol=f=>mixHex(COL.seq0,COL.seq1,0.22+0.78*f);
+function drawWS(){const cv=$('#cWS');if(!shown(cv))return;const R=recOf(),n=WS_NAMES.length,top=2,H=top+n*WS_RH+20;const F=cvFit(cv,H);if(!F||!R)return;
+  const {g,w}=F,A=tAxis(w),S=R.samples,P=R.replans,trig=new Array(n).fill(0),bot=top+n*WS_RH;
+  for(let k=Math.max(0,P.find(A.t0));k<P.len;k++){const rec=P.get(k);if(rec.t<A.t0)continue;for(const ch of rec.changes||[])if(ch[3]>=A.t0)trig[ch[0]]++}
+  tGrid(g,A,top,bot);
+  for(let i=0;i<n;i++){const y=top+i*WS_RH;if(trig[i]){g.fillStyle=hexA(COL.accent,0.08);g.fillRect(0,y,w,WS_RH)}else if(i%2){g.fillStyle=hexA(COL.panel2,0.6);g.fillRect(A.x0,y,A.x1-A.x0,WS_RH)}}
+  const k0=Math.max(0,S.find(A.t0)),xEnd=A.X(Math.min(clock.t,A.t1));
+  for(let i=0;i<n;i++){const y=top+i*WS_RH,mx=Math.max(1,WS_LABELS[WS_NAMES[i]].length-1);let rv=-1,rx=0;
+    const flush=x=>{if(rv>0){g.fillStyle=seqCol(rv/mx);g.fillRect(rx,y+1,Math.max(1,x-rx),WS_RH-2)}};
+    for(let k=k0;k<S.len;k++){const s=S.get(k),v=s.ws[i];if(v!==rv){const x=A.X(Math.max(s.t,A.t0));flush(x);rv=v;rx=x}}flush(xEnd)}
+  for(let k=Math.max(0,P.find(A.t0));k<P.len;k++){const rec=P.get(k);if(rec.t<A.t0)continue;const x=Math.round(A.X(rec.t));
+    g.fillStyle=rec.accepted?hexA(COL.accent,0.55):hexA(COL.muted,0.22);g.fillRect(x,top,1,bot-top);
+    for(const ch of rec.changes||[]){if(ch[3]<A.t0)continue;const cx=A.X(ch[3]),cy=top+ch[0]*WS_RH+WS_RH/2;g.fillStyle=COL.accent;g.strokeStyle=COL.bg;g.lineWidth=1;g.beginPath();g.moveTo(cx-3,cy-4);g.lineTo(cx+3,cy);g.lineTo(cx-3,cy+4);g.closePath();g.fill();g.stroke()}}
+  const sNow=scrubSample()||S.last(),narrow=TL_L<110;g.font=`${narrow?9.5:10.5}px ${MONO}`;
+  for(let i=0;i<n;i++){const y=top+i*WS_RH+WS_RH/2+0.5;g.textAlign='right';g.fillStyle=trig[i]?COL.accent:COL.muted;g.fillText(WS_NAMES[i]+(trig[i]&&!narrow?` ▸${trig[i]}`:''),A.x0-6,y);
+    if(sNow){g.textAlign='left';g.fillStyle=sNow.ws[i]?COL.fg:COL.muted;let t=wsLbl(i,sNow.ws[i]);const mx=narrow?5:8;if(t.length>mx)t=t.slice(0,mx-1)+'…';g.fillText(t,A.x1+5,y)}}
+  tTicks(g,A,bot+1);tCursor(g,A,top,bot);
+  setHTML($('#wsInfo'),`${esc(selBrain().p.label)} · ${n} bytes · darker→brighter = higher value · <span style="color:var(--accent)">▸ triggered a replan</span> · amber lines: accepted replans`)}
+timeChart($('#cWS'),(x,y,A)=>{const R=recOf();if(!R||x<A.x0||x>A.x1)return null;const s=sampleAt(R,A.T(x));if(!s)return null;const row=Math.floor((y-2)/WS_RH);
+  return `<b>t ${fmtT(s.t)}</b> <span class="m">${fmtDay(s.day)} · ${esc(s.task||'(planning)')}</span><div class="g2">${WS_NAMES.map((nm,i)=>`<span class="${i===row?'hl':'m'}">${nm}</span><span class="${i===row?'hl':''}">${esc(wsLbl(i,s.ws[i]))}</span>`).join('')}</div>`});
+
+/* ---------- 5. drives & beliefs ---------- */
+const DRV=[{k:'hunger',i:0,c:2},{k:'digestion',i:1,c:5},{k:'body heat',i:2,c:4},{k:'preferred heat',i:6,c:4,dash:true},{k:'fatigue',i:3,c:7},{k:'stress',i:4,c:1},{k:'condition',i:5,c:8},{k:'appetite',i:7,c:3,own:true}];
+$('#drLeg').innerHTML=DRV.map(d=>`<button data-drv="${d.k}" aria-pressed="${!DBG.hide.has(d.k)}"><svg width="16" height="6" aria-hidden="true"><line x1="0" y1="3" x2="16" y2="3" stroke="${BR_COL[d.c]}" stroke-width="2" ${d.dash?'stroke-dasharray="3 2"':''}/></svg>${d.k}</button>`).join('');
+$('#drLeg').addEventListener('click',e=>{const b=e.target.closest('[data-drv]');if(!b)return;const k=b.dataset.drv;if(DBG.hide.has(k))DBG.hide.delete(k);else DBG.hide.add(k);b.setAttribute('aria-pressed',!DBG.hide.has(k));dbgKick()});
+function lineSeries(g,A,S,k0,get,Y){let pen=false,lx=-9;g.beginPath();for(let k=k0;k<S.len;k++){const s=S.get(k);if(s.t<A.t0&&k<S.len-1&&S.get(k+1).t<A.t0)continue;const v=get(s);
+    if(v==null||isNaN(v)){pen=false;continue}const x=A.X(clamp(s.t,A.t0,A.t1));if(pen&&x-lx<0.6&&k<S.len-1)continue;const y=Y(v);if(pen)g.lineTo(x,y);else g.moveTo(x,y);pen=true;lx=x}g.stroke()}
+function drawDrives(){const cv=$('#cDR');if(!shown(cv))return;const R=recOf(),PH=120,AP=40,H=6+PH+12+AP+18;const F=cvFit(cv,H);if(!F||!R)return;
+  const {g,w}=F,A=tAxis(w),S=R.samples,k0=Math.max(0,S.find(A.t0)),y0=6,Y=v=>y0+PH*(1-clamp(v,0,1)),ya=y0+PH+12,YA=v=>ya+AP*(1-clamp((v-0.35)/(2.2-0.35),0,1));
+  tGrid(g,A,y0,ya+AP);g.font=`10.5px ${MONO}`;g.textAlign='right';
+  for(const v of [0,0.5,1]){g.fillStyle=hexA(COL.line,0.9);g.fillRect(A.x0,Math.round(Y(v)),A.x1-A.x0,1);g.fillStyle=COL.muted;g.fillText(v.toFixed(1),A.x0-6,Y(v))}
+  g.fillStyle=hexA(COL.line,0.9);g.fillRect(A.x0,Math.round(YA(1)),A.x1-A.x0,1);g.fillStyle=COL.muted;g.fillText('appetite',A.x0-6,ya+AP/2-6);g.fillText('×1.0',A.x0-6,YA(1)+7);
+  g.lineJoin='round';
+  for(const d of DRV){if(DBG.hide.has(d.k))continue;g.strokeStyle=BR_COL[d.c];g.lineWidth=d.dash?1.2:1.6;g.setLineDash(d.dash?[4,3]:[]);lineSeries(g,A,S,k0,s=>s.d[d.i],d.own?YA:Y)}
+  g.setLineDash([]);tTicks(g,A,ya+AP+1);tCursor(g,A,y0,ya+AP)}
+timeChart($('#cDR'),(x,y,A)=>{const R=recOf();if(!R||x<A.x0||x>A.x1)return null;const s=sampleAt(R,A.T(x));if(!s)return null;
+  return `<b>t ${fmtT(s.t)}</b> <span class="m">${fmtDay(s.day)}</span><div class="g2">${DRV.filter(d=>!DBG.hide.has(d.k)).map(d=>`<span><i style="display:inline-block;width:9px;height:3px;vertical-align:middle;background:${BR_COL[d.c]}"></i> ${d.k}</span><span>${isNaN(s.d[d.i])?'—':s.d[d.i].toFixed(2)}</span>`).join('')}</div>`});
+function beliefEnts(R,A){const S=R.samples,m=new Map();for(let k=Math.max(0,S.find(A.t0));k<S.len;k++){const s=S.get(k);for(const b of s.bel){const e=m.get(b[0]);if(e)e.mx=Math.max(e.mx,b[1]);else m.set(b[0],{name:b[0],col:b[3]==='rival'?COL.fg:b[3],rival:b[3]==='rival',mx:b[1]})}}
+  return [...m.values()].sort((a,b)=>(b.rival-a.rival)||(b.mx-a.mx)).slice(0,7)}
+function drawBeliefs(){const cv=$('#cBL');if(!shown(cv))return;const R=recOf();if(!R)return;const A0=tAxis(cv.parentElement.clientWidth||600),ents=beliefEnts(R,A0),PH=96,SR=12,H=8+PH+8+Math.max(1,ents.length)*SR+18;
+  const F=cvFit(cv,H);if(!F)return;const {g,w}=F,A=tAxis(w),S=R.samples,k0=Math.max(0,S.find(A.t0)),y0=8,Y=v=>y0+PH*(1-clamp(v,0,1)),ys=y0+PH+8;
+  tGrid(g,A,y0,ys+ents.length*SR);g.font=`10.5px ${MONO}`;g.textAlign='right';
+  for(const v of [0,0.5,1]){g.fillStyle=hexA(COL.line,0.9);g.fillRect(A.x0,Math.round(Y(v)),A.x1-A.x0,1);g.fillStyle=COL.muted;g.fillText(v.toFixed(1),A.x0-6,Y(v))}
+  // shading under the current target's line, coloured by the sense channel of that moment
+  for(let k=k0;k<S.len;k++){const s=S.get(k);if(!s.tgt||s.t>A.t1)continue;const b=s.bel.find(q=>q[0]===s.tgt);if(!b)continue;const nx=k+1<S.len?S.get(k+1).t:clock.t;if(nx<A.t0)continue;
+    const x0=A.X(Math.max(s.t,A.t0)),x1=A.X(Math.min(nx,A.t1));g.fillStyle=hexA(chanCol(b[2]),b[2]?0.26:0.1);g.fillRect(x0,Y(b[1]),Math.max(0.6,x1-x0),Y(0)-Y(b[1]))}
+  ents.forEach((e,j)=>{g.strokeStyle=e.col;g.lineWidth=1.6;g.setLineDash(e.rival?[5,3]:[]);lineSeries(g,A,S,k0,s=>{const b=s.bel.find(q=>q[0]===e.name);return b?b[1]:null},Y);g.setLineDash([]);
+    const yy=ys+j*SR;g.fillStyle=hexA(COL.panel2,0.8);g.fillRect(A.x0,yy,A.x1-A.x0,SR-3);let rc=-1,rx=0;
+    const flush=x=>{if(rc>=0){g.fillStyle=chanCol(rc);g.fillRect(rx,yy,Math.max(0.8,x-rx),SR-3)}};
+    for(let k=k0;k<S.len;k++){const s=S.get(k),b=s.bel.find(q=>q[0]===e.name),c=b?b[2]:-1;if(c!==rc){const x=A.X(Math.max(s.t,A.t0));flush(x);rc=c;rx=x}}flush(A.X(Math.min(clock.t,A.t1)));
+    g.textAlign='right';g.fillStyle=COL.muted;g.font=`10px ${MONO}`;let nm=e.name;const mxn=TL_L<110?10:13;if(nm.length>mxn)nm=nm.slice(0,mxn-1)+'…';g.fillText(nm,A.x0-16,yy+(SR-3)/2+0.5);g.fillStyle=e.col;g.fillRect(A.x0-12,yy,8,SR-3)});
+  if(!ents.length){g.textAlign='left';g.fillStyle=COL.muted;g.fillText('nothing sensed in this window',A.x0+6,Y(0.5))}
+  tTicks(g,A,ys+Math.max(1,ents.length)*SR+1);tCursor(g,A,y0,ys+ents.length*SR);
+  setHTML($('#blLeg'),ents.map(e=>`<span><svg width="16" height="6" aria-hidden="true"><line x1="0" y1="3" x2="16" y2="3" stroke="${e.col}" stroke-width="2" ${e.rival?'stroke-dasharray="4 2"':''}/></svg>${esc(e.name)}${e.rival?' (rival)':''}</span>`).join('')+
+    `<span><i style="background:var(--sight)"></i>sight</span><span><i style="background:var(--vib)"></i>vibration</span><span><i style="background:var(--scent)"></i>scent</span><span><i style="background:var(--muted)"></i>memory only</span><span>shaded: the current target</span>`)}
+timeChart($('#cBL'),(x,y,A)=>{const R=recOf();if(!R||x<A.x0||x>A.x1)return null;const s=sampleAt(R,A.T(x));if(!s)return null;
+  return `<b>t ${fmtT(s.t)}</b> <span class="m">target: ${esc(s.tgt||'none')}</span><div class="g2">${s.bel.slice().sort((a,b)=>b[1]-a[1]).map(b=>`<span class="${b[0]===s.tgt?'hl':''}">${esc(b[0])}</span><span>${b[1].toFixed(2)} · ${CHAN[b[2]]}</span>`).join('')||'<span class="m">nothing sensed</span><span></span>'}</div>`});
+
+/* ---------- controls, tabs, open/close ---------- */
+function setPaused(v){clock.paused=v;const b=$('#bPause');b.textContent=v?'Play':'Pause';b.classList.toggle('on',v);const d=$('#dPause');d.textContent=v?'Resume':'Pause';d.classList.toggle('on',v);if(!v)DBG.step=null;dbgKick()}
+function setPane(p){DBG.pane=p;document.querySelectorAll('#dbg .dp').forEach(el=>el.classList.toggle('show',el.dataset.pane===p));document.querySelectorAll('#dTabs [data-pane]').forEach(b=>b.setAttribute('aria-selected',b.dataset.pane===p));hideTip();dbgKick()}
+function setSub(s){DBG.sub=s;document.querySelectorAll('#pDetail [data-sub]').forEach(b=>b.setAttribute('aria-selected',b.dataset.sub===s));$('#vInspect').hidden=s!=='inspect';$('#vTrace').hidden=s!=='trace';$('#vSnap').hidden=s!=='snap'}
+function selectSnake(i){ui.sel=i;buildTabs();buildTree();updatePanel();for(const q of world.snakes)if(q.R)q.R.labelKey='';DBG.sel=null;DBG.rep=null;DBG.repFollow=true;syncRepNav();dbgBuildTabs();dbgKick()}
+function dbgBuildTabs(){const box=$('#dSnakes');box.innerHTML='';world.snakes.forEach((b,i)=>{const bt=document.createElement('button');bt.setAttribute('role','tab');bt.setAttribute('aria-selected',i===ui.sel);bt.classList.toggle('on',i===ui.sel);
+  bt.innerHTML=`<span class="dot" style="background:${b.gone?'#555':'#'+new THREE.Color(INTENT_COL[WS_LABELS.Intent[b.ctx.ws[WS.Intent]]]).getHexString()}"></span>${esc(b.p.label)}`;bt.onclick=()=>selectSnake(i);box.appendChild(bt)})}
+function dbgReset(){Object.assign(DBG,{sel:null,rep:null,repFollow:true,cursor:null,step:null,hoverT:null});DBG.g.brain=null;syncRepNav();setFollow(true);if(DBG.open){dbgBuildTabs();tlLegend()}}
+function dbgToggle(v){DBG.open=v??!DBG.open;dbgEl.hidden=!DBG.open;const b=$('#bDbg');b.classList.toggle('on',DBG.open);b.setAttribute('aria-expanded',DBG.open);
+  if(DBG.open){dbgBuildTabs();tlLegend();setPane(DBG.pane);setSub(DBG.sub);dbgRender();$('#dbgTitle').focus()}else{hideTip();DBG.drag=null;$('#bDbg').focus();updatePanel()}}
+function dbgStatus(){const m=DBG.msg&&performance.now()<DBG.msg.until?` · <b style="color:var(--accent)">${esc(DBG.msg.text)}</b>`:'';
+  return (DBG.cursor!=null?`<span class="scrub">cursor t ${fmtT(DBG.cursor)} (${fmtT(Math.max(0,clock.t-DBG.cursor))} ago): recorded snapshot, the 3D world stays live</span> · `:'<b>LIVE</b> · ')+
+    `t ${fmtT(clock.t)} · ${fmtDay(clock.day)} · ${clock.paused?'<b>paused</b>':`${clock.scale}×`}${DBG.step?' · <b>running to the next replan…</b>':''}${m}`}
+function dbgRender(){if(!DBG.open)return;DBG.t=performance.now();const ph=isPhone();TL_L=ph?96:118;TL_R=ph?42:58;
+  const st=dbgStatus();setHTML($('#dStatus'),st);setHTML($('#dStatusM'),st);
+  $('#dLive').classList.toggle('on',DBG.cursor==null);$('#dNext').textContent=DBG.step?'Stepping…':'Step → replan';
+  drawGraph();
+  if(shown($('#pDetail'))){if(DBG.sub==='inspect')setHTML($('#vInspect'),inspectorHTML());else if(DBG.sub==='trace')renderTrace();else setHTML($('#vSnap'),snapHTML())}
+  drawTimeline();drawWS();drawDrives();drawBeliefs()}
+function dbgExport(){const recs=world.recs||[],lb=(i,v)=>wsLbl(i,v),[w0]=winT(),inW=x=>x.t>=w0,arr=(ring,f=inW)=>ring.toArray().filter(f);
+  return JSON.stringify({app:'Anaconda HTN Observatory: planner debugger log',exportedAt:{t:r3(clock.t),gameTime:fmtDay(clock.day)},
+    window:{from:r3(w0),to:r3(clock.t),minutes:DBG.win/60},
+    notes:'Covers the debugger timeline window. t is simulation seconds (one game day = 360 s). Samples are taken every sim second. ws = world-state bytes in worldStateBytes order; d = drives in driveKeys order; mtr = method traversal record (lower = higher priority).',
+    worldStateBytes:WS_NAMES,worldStateLabels:WS_LABELS,driveKeys:['hunger','digestion','heat','fatigue','stress','condition','prefT','appetite'],branches:world.brain.domain.root.children.map((_,i)=>brName(i)),
+    snakes:recs.map(R=>({slot:R.slot,label:R.label,
+      samples:arr(R.samples).map(s=>({t:r3(s.t),day:r3(s.day),ws:Array.from(s.ws),d:s.d.map(v=>isNaN(v)?null:v),task:s.task,elapsed:s.el,branch:s.br,mtr:s.mtr,path:s.names,queue:s.q,partial:s.pa,target:s.tgt,beliefs:s.bel.map(b=>({name:b[0],conf:b[1],channel:CHAN[b[2]]})),state:s.state||undefined})),
+      tasks:arr(R.tasks,s=>(s.t1??clock.t)>=w0).map(s=>({t0:r3(s.t),t1:s.t1==null?null:r3(s.t1),task:s.name,branch:s.br,end:s.end||'running'})),
+      replans:arr(R.replans).map(r=>({id:r.id,t:r3(r.t),kind:r.kind,accepted:r.accepted,reason:r.reason,trigger:(r.changes||[]).map(([i,a,b,t])=>({byte:WS_NAMES[i],from:lb(i,a),to:lb(i,b),t:r3(t)})),why:r.why,
+        oldMtr:r.oldMtr,oldPath:r.oldNames,newMtr:r.newMtr,newPath:r.newNames,plan:r.plan,partial:r.partial,result:r.result||null,running:r.running,planRepair:!!r.cont,
+        decomposition:r.log.map(e=>({depth:e.depth,name:e.name,type:e.type,result:e.res,cond:e.cond,onPath:!!(e.node&&r.final&&r.final.has(e.node))}))})),
+      marks:arr(R.marks).map(m=>({t:r3(m.t),kind:m.kind,text:m.text}))})),
+    events:world.evlog?arr(world.evlog).map(e=>({t:r3(e.t),text:e.text})):[]})}
+async function dbgCopy(){const txt=dbgExport(),kb=Math.round(txt.length/1024);
+  try{if(!navigator.clipboard||!window.isSecureContext)throw new Error('no clipboard');await Promise.race([navigator.clipboard.writeText(txt),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),1500))]);dbgMsg(`copied the log (${kb} KB of JSON) to the clipboard`)}
+  catch(e){const box=$('#dCopyBox'),ta=$('#dCopyText');box.hidden=false;ta.value=txt;ta.focus();ta.select();let ok=false;try{ok=document.execCommand('copy')}catch(_){}
+    $('#dCopyNote').textContent=ok?`Copied (${kb} KB of JSON). The text is also below, selected.`:`The clipboard is not available here (${kb} KB of JSON). The text below is selected: press Ctrl+C (⌘C on a Mac) to copy it.`}}
+const closeCopy=()=>{$('#dCopyBox').hidden=true;$('#dCopyText').value='';$('#dCopy').focus()};
+$('#dCopy').onclick=dbgCopy;$('#dCopyClose').onclick=closeCopy;$('#dCopySel').onclick=()=>{const ta=$('#dCopyText');ta.focus();ta.select()};
+$('#dPause').onclick=()=>setPaused(!clock.paused);
+$('#dStep').onclick=()=>{setPaused(true);DBG.step=null;world.step(1/30);DBG.cursor=null;dbgRender()};
+$('#dNext').onclick=()=>{const R=recOf();if(!R)return;if(DBG.step){DBG.step=null;dbgKick();return}setPaused(true);DBG.step={R,n0:R.replans.total,t0:clock.t};DBG.cursor=null;dbgKick()};
+$('#dLive').onclick=()=>{DBG.cursor=null;dbgKick()};
+$('#dClose').onclick=()=>dbgToggle(false);
+$('#bDbg').onclick=()=>dbgToggle();
+document.querySelectorAll('[data-win]').forEach(b=>b.onclick=()=>{DBG.win=+b.dataset.win;document.querySelectorAll('[data-win]').forEach(x=>x.classList.toggle('on',x===b));dbgKick()});
+document.querySelectorAll('#dTabs [data-pane]').forEach(b=>b.onclick=()=>setPane(b.dataset.pane));
+document.querySelectorAll('#pDetail [data-sub]').forEach(b=>b.onclick=()=>{setSub(b.dataset.sub);dbgRender()});
+$('#vInspect').addEventListener('click',e=>{const b=e.target.closest('[data-nid]');if(!b)return;const n=NODE_BY_ID.get(+b.dataset.nid);if(n){revealNode(n);dbgRender()}});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&DBG.open){if(!$('#dCopyBox').hidden)closeCopy();else dbgToggle(false);e.preventDefault();return}
+  if(e.ctrlKey||e.metaKey||e.altKey)return;const tg=e.target,tag=tg&&tg.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||(tg&&tg.isContentEditable))return;
+  const k=e.key;if(k==='d'||k==='D'){dbgToggle();e.preventDefault();return}
+  if(!DBG.open)return;
+  if(k==='p'||k==='P')setPaused(!clock.paused);else if(k==='.')$('#dStep').click();else if(k==='n'||k==='N')$('#dNext').click();else if(k==='l'||k==='L'){DBG.cursor=null;dbgKick()}else return;
+  e.preventDefault()});
+// step-to-replan runs in chunks from the main loop (≤ 300 ticks = 10 sim s per frame, gives up after 10 sim minutes)
+function dbgStepFrame(){const S=DBG.step;if(!S)return;let k=0;const alive=()=>world.recs&&world.recs.includes(S.R);
+  while(k<300&&alive()&&S.R.replans.total===S.n0&&clock.t-S.t0<600){world.step(1/30);k++}
+  if(alive()&&S.R.replans.total!==S.n0){DBG.step=null;DBG.repFollow=true;DBG.rep=null;syncRepNav();setSub('trace');if(isPhone())setPane('detail');dbgMsg(`${S.R.short}: replan at t ${fmtT(clock.t)}, paused`)}
+  else if(!alive()||clock.t-S.t0>=600){DBG.step=null;dbgMsg('no replan within 10 sim minutes')}
+  dbgKick()}
 
 /* ============================================================
    13. Main loop
@@ -3247,12 +3955,15 @@ function frame(now){
   if(ui.follow){const sb=selBrain().body,h=sb.head,k=ease(3.7,realDt);const tx=lerp(controls.target.x,h.x,k),tz=lerp(controls.target.z,h.z,k),ty=lerp(controls.target.y,sb.y>0.6?sb.y*0.8:0,ease(2,realDt));
     camera.position.x+=tx-controls.target.x;camera.position.z+=tz-controls.target.z;camera.position.y+=ty-controls.target.y;controls.target.set(tx,ty,tz)}
   if(ui.follow&&view.clientWidth<600){const d=camera.position.distanceTo(controls.target);if(d>30){const k=lerp(1,30/d,ease(1.5,realDt));camera.position.sub(controls.target).multiplyScalar(k).add(controls.target)}} // phones: a closer follow camera
-  controls.update();render(realDt);
+  controls.update();
+  if(DBG.step)dbgStepFrame();
+  if(!DBG.open||frames<2)render(realDt); // (the debugger covers the whole view: the 3D world keeps simulating but is not drawn)
   if(++frames===2){$('#loading').classList.add('done');updatePanel();for(const b of world.snakes)updateLabel(b,true)}
-  if(now-panelT>180){panelT=now;updatePanel();for(const b of world.snakes)updateLabel(b,true)} // wall-clock cadence: the panel keeps up even at a very low frame rate
+  if(DBG.open){if(now-DBG.t>190)dbgRender()} // the debugger redraws at ~5 Hz (plus on interaction)
+  else if(now-panelT>180){panelT=now;updatePanel();for(const b of world.snakes)updateLabel(b,true)} // wall-clock cadence: the panel keeps up even at a very low frame rate
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-window.__sim={world,clock};
+DBG.render=dbgRender;window.__sim={world,clock,dbg:DBG}; // (dbg: the planner debugger state, for probes)
 })();
 </script>
