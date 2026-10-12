@@ -237,6 +237,7 @@ const headingOf=v=>Math.atan2(v.z,v.x);
 const wrapA=a=>{while(a>Math.PI)a-=TAU;while(a<-Math.PI)a+=TAU;return a};
 const rand=(a,b)=>a+Math.random()*(b-a);
 const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
+const gauss=()=>{let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(TAU*v)};
 const randInCircle=r=>{const a=Math.random()*TAU,d=Math.sqrt(Math.random())*r;return {x:Math.cos(a)*d,z:Math.sin(a)*d}};
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 function segDist(p,a,b){const ab=sub(b,a),ap=sub(p,a);const L=dot(ab,ab)||1;const t=clamp(dot(ap,ab)/L,0,1);return dist(p,add(a,mul(ab,t)))}
@@ -308,7 +309,7 @@ function groveHops(a,b){ // breadth-first route through the canopy graph
 const limbU0=(l,rm)=>Math.min(0.9,(trunkR(l.tree,l.y0)+0.6*rm)/l.L);
 function limbPt(l,u,rm){const p=add(l.tree,mul(l.dir,u*l.L));return {x:p.x,z:p.z,cy:lerp(l.y0,l.y1,u)+limbR(u)+0.72*rm}}
 function trunkPt(t,a,cy,rm){const p=add(t,mul(hdir(a),trunkR(t,cy)+0.85*rm));return {x:p.x,z:p.z,cy}}
-function hangPts(l,rm){const b=limbPt(l,1,rm),f=l.dir,o=[];for(const [fw,dn] of [[0.35,0.25],[0.6,0.75],[0.72,1.35],[0.76,1.95],[0.76,2.45]])o.push({x:b.x+f.x*fw,z:b.z+f.z*fw,cy:b.cy-dn});return o}
+function hangPts(l,rm,u=1){const b=limbPt(l,u,rm),f=l.dir,o=[];for(const [fw,dn] of [[0.35,0.25],[0.6,0.75],[0.72,1.35],[0.76,1.95],[0.76,2.45]])o.push({x:b.x+f.x*fw,z:b.z+f.z*fw,cy:b.cy-dn});return o}
 function arbRoute(from,to,rm){
   const out=[];let cur={...from};
   const walk=(l,ua,ub)=>{const n=Math.max(1,Math.ceil(Math.abs(ub-ua)*l.L/0.35));for(let k=1;k<=n;k++)out.push(limbPt(l,lerp(ua,ub,k/n),rm))};
@@ -316,19 +317,20 @@ function arbRoute(from,to,rm){
     const rad=trunkR(t,(c0+c1)/2)+0.85*rm,n=Math.max(1,Math.ceil(Math.hypot(Math.abs(da)*rad,c1-c0)/0.35));for(let k=1;k<=n;k++){const f=k/n;out.push(trunkPt(t,a0+da*f,lerp(c0,c1,f),rm))}};
   const toTrunk=()=>{if(!cur.limb)return;const l=cur.limb,u0=limbU0(l,rm);walk(l,cur.u,u0);cur={tree:l.tree,limb:null,a:l.a,cy:limbPt(l,u0,rm).cy}};
   const toLimb=(l,u)=>{if(cur.limb===l){walk(l,cur.u,u);cur.u=u;return}toTrunk();const u0=limbU0(l,rm);helix(l.tree,cur.a,cur.cy,l.a,limbPt(l,u0,rm).cy);walk(l,u0,u);cur={tree:l.tree,limb:l,u}};
-  if(cur.hang&&cur.limb){const h=hangPts(cur.limb,rm);for(let k=h.length-2;k>=0;k--)out.push(h[k]);out.push(limbPt(cur.limb,1,rm));cur.hang=false;cur.u=1}
+  if(cur.hang&&cur.limb){const hu=cur.u??1,h=hangPts(cur.limb,rm,hu);for(let k=h.length-2;k>=0;k--)out.push(h[k]);out.push(limbPt(cur.limb,hu,rm));cur.hang=false;cur.u=hu}
   const hops=groveHops(cur.tree,to.tree);
   for(let i=0;i<hops.length-1;i++){const l=hops[i].limbs.find(q=>q.to===hops[i+1]);toLimb(l,1);
     const a=limbPt(l,1,rm),b=limbPt(l.pair,1,rm),n=Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/0.3);
     for(let k=1;k<=n;k++){const f=k/n;out.push({x:lerp(a.x,b.x,f),z:lerp(a.z,b.z,f),cy:lerp(a.cy,b.cy,f)-0.45*4*f*(1-f),bridge:true})} // the reach between crowns sags a little
     cur={tree:hops[i+1],limb:l.pair,u:1}}
-  if(to.limb){toLimb(to.limb,to.u);if(to.hang)out.push(...hangPts(to.limb,rm))}
+  if(to.limb){toLimb(to.limb,to.u);if(to.hang)out.push(...hangPts(to.limb,rm,to.u))}
   else{toTrunk();const a1=to.a!=null?to.a:cur.a;helix(to.tree,cur.a,cur.cy,a1,to.cy);if(to.ground){const g=add(to.tree,mul(hdir(a1),trunkR(to.tree,0)+0.85*rm+2.4));out.push({x:g.x,z:g.z,cy:0.72*rm})}}
   return out;
 }
 // where on a tree a body is (for re-planning mid-climb); null on the ground
 function locatePerch(s,rm){
   if(s.y<0.3)return null;const t=nearestGrove(s.head),dt=dist(t,s.head);if(dt>9)return null;const cy=s.y+0.72*rm;let best=null,bd=1.4;
+  if(s.perch&&s.perch.hang&&s.perch.limb){const h=hangPts(s.perch.limb,rm,s.perch.u??1),e=h[h.length-1];if(Math.hypot(e.x-s.head.x,e.z-s.head.z)<1&&Math.abs(e.cy-cy)<0.8)return {tree:s.perch.tree,limb:s.perch.limb,u:s.perch.u??1,hang:true}}
   for(const l of t.limbs){const v=sub(s.head,t),u=clamp(dot(v,l.dir)/l.L,0,1),q=limbPt(l,u,rm),d=Math.hypot(q.x-s.head.x,q.z-s.head.z)+0.5*Math.abs(q.cy-cy);
     if(u>0.12&&d<bd){bd=d;best={tree:t,limb:l,u}}}
   if(best)return best;
@@ -338,20 +340,78 @@ function locatePerch(s,rm){
 }
 const toRoute=(pts,rm)=>pts.map(q=>({x:q.x,z:q.z,y:Math.max(0,q.cy-0.72*rm),bridge:!!q.bridge}));
 
+/* Ground navigation: a coarse cost grid (3 m cells). Pool water, the muddy margin, reeds/tall grass and tree cover are cheap;
+   open grass is expensive by day (exposed), the worn paths more so, and camp very expensive; at night open ground costs little more
+   than cover. A* over it makes long moves follow shorelines and cover instead of straight lines across open ground. */
+const PATHS=[...TERMINALS.map(t=>[CAMP,t]),...PONDS.map(o=>[CAMP,edgePoint(o,CAMP,-1.5)])];
+const pathNear=p=>PATHS.some(([a,b])=>segDist(p,a,b)<6)?1:0;
+const NAV={c:3,n:Math.ceil(2*ISLAND_R/3),feat:null,cost:new Map()};
+function navFeat(){
+  if(NAV.feat)return NAV.feat;const n=NAV.n,F=NAV.feat=[];
+  for(let j=0;j<n;j++)for(let i=0;i<n;i++){const p={x:-ISLAND_R+(i+0.5)*NAV.c,z:-ISLAND_R+(j+0.5)*NAV.c};
+    F.push({out:len(p)>ISLAND_R-6,ed:edgeDist(p),gr:inGrass(p),tr:TREES.some(t=>dist(t,p)<(t.big?6:4.5)),path:PATHS.some(([a,b])=>segDist(p,a,b)<3),camp:dist(p,CAMP)<22})}
+  return F;
+}
+const NAV_PROF={pool:{water:0.6,shore:0.7},tree:{water:12,shore:1.5}};
+function navCosts(prof,night){
+  const key=prof+(night?'n':'d');if(NAV.cost.has(key))return NAV.cost.get(key);const P=NAV_PROF[prof];
+  const C=navFeat().map(f=>{if(f.out)return Infinity;if(f.ed<-1)return P.water;if(f.ed<3.5)return P.shore;
+    let c=f.gr?0.85:f.tr?(prof==='tree'?0.7:0.95):(night?1.05:1.9);if(f.path)c+=night?0.3:1.2;if(f.camp)c+=night?1.5:5;return c});
+  NAV.cost.set(key,C);return C;
+}
+function navRoute(from,to,prof,night){
+  const n=NAV.n,cs=NAV.c,C=navCosts(prof,night),ix=p=>clamp(Math.floor((p.x+ISLAND_R)/cs),0,n-1),iz=p=>clamp(Math.floor((p.z+ISLAND_R)/cs),0,n-1);
+  const s0=iz(from)*n+ix(from),g=iz(to)*n+ix(to);if(s0===g)return [to];
+  const gx=g%n,gz=(g/n)|0,minC=0.6,G=new Float32Array(n*n).fill(Infinity),prev=new Int32Array(n*n).fill(-1),closed=new Uint8Array(n*n);
+  const heap=[];const push=(k,f)=>{heap.push([f,k]);let i=heap.length-1;while(i>0){const pa=(i-1)>>1;if(heap[pa][0]<=heap[i][0])break;[heap[pa],heap[i]]=[heap[i],heap[pa]];i=pa}};
+  const pop=()=>{const top=heap[0],last=heap.pop();if(heap.length){heap[0]=last;let i=0;for(;;){const l=2*i+1,r=l+1;let m=i;if(l<heap.length&&heap[l][0]<heap[m][0])m=l;if(r<heap.length&&heap[r][0]<heap[m][0])m=r;if(m===i)break;[heap[m],heap[i]]=[heap[i],heap[m]];i=m}}return top};
+  G[s0]=0;push(s0,0);let it=0;
+  while(heap.length&&it++<20000){const [,k]=pop();if(closed[k])continue;closed[k]=1;if(k===g)break;const x=k%n,z=(k/n)|0;
+    for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dz)continue;const X=x+dx,Z=z+dz;if(X<0||Z<0||X>=n||Z>=n)continue;const q=Z*n+X;if(closed[q])continue;
+      const step=(dx&&dz?1.414:1)*(C[k]+C[q])/2;if(!isFinite(step))continue;const ng=G[k]+step;if(ng<G[q]){G[q]=ng;prev[q]=k;push(q,ng+minC*Math.hypot(X-gx,Z-gz))}}}
+  if(prev[g]<0)return [to];
+  const cells=[];for(let k=g;k>=0&&k!==s0;k=prev[k])cells.unshift(k);
+  const out=[];for(let i=1;i<cells.length-1;i+=2){const k=cells[i];out.push({x:-ISLAND_R+((k%n)+0.5)*cs+rand(-0.6,0.6),z:-ISLAND_R+(((k/n)|0)+0.5)*cs+rand(-0.6,0.6)})}
+  out.push({...to});return out;
+}
+// waypoints along a pool's shallows (an arc at a given inset), for prowling and shore travel inside one pool
+function shoreArc(o,from,to,inset){const a0=headingOf(sub(from,o)),a1=headingOf(sub(to,o)),da=wrapA(a1-a0),n=Math.max(2,Math.ceil(Math.abs(da)*(o.r-inset)/4)),out=[];
+  for(let k=1;k<=n;k++){const a=a0+da*k/n,r=Math.min(o.r-0.8,o.r-inset+rand(-1.1,1.1));out.push(add(o,mul(hdir(a),r)))}out[out.length-1]={...to};return out}
+
 /* ============================================================
    2. Clock: game seconds, day fraction, time-of-day buckets
    ============================================================ */
-const clock={t:0,day:0.73,dayLen:360,scale:3,paused:false};
+const clock={t:0,day:0.73,day0:0.73,dayLen:360,scale:3,paused:false};
 const todOf=d=>d<0.2||d>=0.8?0:d<0.3?1:d<0.7?2:3;
 const TOD_NAMES=['night','dawn','day','dusk'];
 const sunElev=d=>Math.sin((d-0.25)*TAU);
+const HOUR=clock.dayLen/24; // one game hour (15 game seconds)
+const dayIndex=()=>Math.floor(clock.day0+clock.t/clock.dayLen); // absolute calendar day (for day-scale schedules)
+/* Weather: cloud cover drifts toward a "front" target that changes every ~10 game hours (persistent spells, not dice per hour);
+   each calendar day has its own temperature offset (an AR(1) warm/cool spell). Sky is quantised with hysteresis into the Sky byte.
+   Insolation = sun elevation x cloud transmission: it drives body heat, basking value, digestion speed and prey routines. */
+const weather={cloud:0.3,target:0.3,nextFront:0,sky:0,dayTemp:0,day:-1,
+  reset(){this.cloud=this.target=clamp(0.25+gauss()*0.25,0,1);this.nextFront=clock.t+rand(4,14)*HOUR;this.dayTemp=gauss()*0.06;this.day=dayIndex();this.sky=this.cloud>0.72?2:this.cloud>0.38?1:0},
+  update(dt){
+    if(clock.t>=this.nextFront){this.target=clamp(this.target*0.45+0.55*clamp(0.38+gauss()*0.33,0,1),0,1);this.nextFront=clock.t+rand(5,16)*HOUR}
+    this.cloud=clamp(this.cloud+(this.target-this.cloud)*dt/(2.5*HOUR)+gauss()*Math.sqrt(dt/HOUR)*0.015,0,1);
+    const s=this.sky;this.sky=this.cloud>(s===2?0.66:0.74)?2:this.cloud>(s>=1?0.33:0.4)?1:0;
+    const di=dayIndex();if(di!==this.day){this.day=di;this.dayTemp=clamp(this.dayTemp*0.6+gauss()*0.06,-0.14,0.14)}
+  },
+  insol(d=clock.day){return Math.max(0,sunElev(d))*(1-0.82*this.cloud)},
+  ambient(){return 0.13+0.62*this.insol()+this.dayTemp-(this.sky===2?0.04:0)},
+  water(){return 0.42+0.5*this.dayTemp}, // pool water is buffered: warmer than night air, cooler than a sunny bank
+  label(){return ['clear','overcast','rain'][this.sky]}
+};
 
 /* ============================================================
    3. Prey (humans, capybaras) and observer noise; scent marks
    ============================================================ */
 const SCENT_LIFE=240,SCENT_SPACING=5,SCENT_RING=64;
 let PREY_ID=0;
-const FEAR_LIFE=240,FEAR_R=16; // prey remember where the snake was seen or struck for a few minutes
+const FEAR_LIFE=240,FEAR_R=16;
+// individuals differ: a herd mixes young capybaras (a small meal, quickly digested) with adults; people vary in build
+const preyMass=kind=>kind==='human'?rand(0.75,1.3):Math.random()<0.4?rand(0.3,0.6):rand(0.8,1.4); // prey remember where the snake was seen or struck for a few minutes
 class Prey{
   constructor(kind,name,color,pos){
     this.id=PREY_ID++;this.kind=kind;this.name=name;this.color=color;
@@ -359,18 +419,29 @@ class Prey{
     this.state='idle';this.timer=rand(1,5);this.goal=null;this.goalSpeed=1.4;this.crouch=false;this.herd=null;
     this.marks=[];this.lastMark={...pos};this.respawnAt=0;this.fleeUntil=0;this.immuneUntil=0;this.vigilantUntil=0;
     this.wet=false;this.swimming=false;this.drinking=false;this.atPond=false;
+    this.mass=preyMass(kind);this.shoreLegs=0; // individuals differ: meal size, struggle strength
+    this.pondPref=PONDS.map(()=>rand(0.3,1.5));this.avoidPond=new Map();this.spotted=new Map(); // per-person habits and per-pool wariness
   }
   get active(){return this.state!=='eaten'}
   liveMarks(now){return this.marks.filter(m=>now-m.t<SCENT_LIFE)}
   looksAt(p){const d=dist(this.pos,p);return this.kind==='human'&&d<30&&dot(hdir(this.h),norm(sub(p,this.pos)))>0.75}
   safeGoal(world,gen){let g;for(let k=0;k<6;k++){g=gen();if(!world.feared(g))return g}return null}
+  pondOK(o){return clock.t>(this.avoidPond.get(o)||0)}
   pickGoal(world){
-    const now=clock.t;let g=null;const r=Math.random();this.atPond=false;
-    if(r<0.35){g=this.safeGoal(world,()=>pick(TERMINALS));this.dwell=rand(8,20)}
-    else if(r<0.62&&now>world.pondAvoidUntil){g=this.safeGoal(world,()=>{const o=pick(PONDS);const a=Math.random()*TAU;return {x:o.x+Math.cos(a)*(o.r+1.3),z:o.z+Math.sin(a)*(o.r+1.3)}});this.dwell=rand(5,12);this.atPond=!!g}
-    else if(r<0.85){g=add(CAMP,randInCircle(5));this.dwell=rand(6,16)}
+    // a person's day: asleep at camp most of the night, out at the terminals and pools by day, sheltering when it rains;
+    // which pool they visit follows their own (slowly drifting) habits and avoids pools where they met the snake
+    const now=clock.t,tod=todOf(clock.day),rain=world.weather.sky===2;let g=null;const r=Math.random();this.atPond=false;
+    const pTerm=tod===0?0.12:rain?0.45:0.33,pPond=tod===0?0.03:rain?0.06:tod===2?0.22:0.3,pCamp=tod===0?0.82:rain?0.42:0.25;
+    if(r<pTerm){g=this.safeGoal(world,()=>pick(TERMINALS));this.dwell=rand(8,20)*(tod===0?2:1)}
+    else if(r<pTerm+pPond&&now>world.pondAvoidUntil){
+      const ok=PONDS.map((o,i)=>this.pondOK(o)?this.pondPref[i]:0),tot=ok.reduce((a,b)=>a+b,0);
+      if(tot>0){let x=Math.random()*tot,o=PONDS[0];for(let i=0;i<PONDS.length;i++){x-=ok[i];if(x<=0){o=PONDS[i];break}}
+        g=this.safeGoal(world,()=>{const a=Math.random()*TAU;return {x:o.x+Math.cos(a)*(o.r+1.3),z:o.z+Math.sin(a)*(o.r+1.3)}});this.dwell=rand(4,14);this.atPond=!!g;
+        this.shoreLegs=g&&Math.random()<0.5?1+Math.floor(Math.random()*3):0;this.shorePond=o}}
+    else if(r<pTerm+pPond+pCamp){g=add(CAMP,randInCircle(5));this.dwell=tod===0?rand(30,90):rand(6,16)}
     else{g=this.safeGoal(world,()=>clampIsland(randInCircle(ISLAND_R-15),10));this.dwell=rand(2,6)}
     if(!g){g=add(CAMP,randInCircle(5));this.dwell=rand(6,16)}
+    if(Math.random()<0.1){const i=Math.floor(Math.random()*PONDS.length);this.pondPref[i]=clamp(this.pondPref[i]+gauss()*0.3,0.1,2)} // habits drift
     this.goal=g;const s=Math.random();this.crouch=false;
     if(s<0.68)this.goalSpeed=1.4;else if(s<0.84)this.goalSpeed=3.2;else{this.goalSpeed=0.45;this.crouch=true}
     this.state='walk';
@@ -384,7 +455,9 @@ class Prey{
     world.addFear(from);
     if(this.kind==='capybara'){this.herd.alarm(world,from,`${this.name} spotted the snake`);return}
     this.startFlee(from);world.event(`${this.name} spotted the snake and runs`);
-    if(edgeDist(from)<8)world.pondAvoidUntil=Math.max(world.pondAvoidUntil,clock.t+200);
+    if(edgeDist(from)<8){world.pondAvoidUntil=Math.max(world.pondAvoidUntil,clock.t+200);
+      const o=nearestPond(from),n=(this.spotted.get(o)||0)+1;this.spotted.set(o,n);
+      if(n>=2){this.avoidPond.set(o,clock.t+clock.dayLen*rand(1,2));this.spotted.set(o,0);world.event(`${this.name} keeps away from ${o.name} for a while`)}}
     for(const h of world.prey)if(h!==this&&h.kind==='human'&&h.active&&h.state!=='caught'&&h.state!=='carcass'&&dist(h.pos,this.pos)<35){ // shout
       h.vigilantUntil=clock.t+200;if(dist(h.pos,from)<18&&h.state!=='flee')h.startFlee(from)}
   }
@@ -399,25 +472,30 @@ class Prey{
       const night=todOf(clock.day)===0,vig=now<this.vigilantUntil;let rate=0,src=null,lunge=null;
       for(const snake of snakes){
         const sh=snake.head,d=dist(this.pos,sh);
-        const range=(human?(night?9:22):(night?6:11))*(vig?1.35:1)*(snake.p.size<0.8?0.8:1);
+        const tod=todOf(clock.day),dim=tod===0?0.4:tod===2?1:0.65; // people see much less at dusk and dawn
+        const range=(human?22:11)*(human?dim:Math.max(0.55,dim))*(vig?1.35:1)*(snake.p.size<0.8?0.8:1);
         const fov=human?dot(hdir(this.h),norm(sub(sh,this.pos)))>Math.cos(vig?1.9:1.4):true;
         const canSee=!snake.hiddenToPrey()&&d<range&&fov&&(snake.y>2||!losBlocked(this.pos,sh));
         // awareness builds up over time; a slow snake in grass or at dusk takes longer to notice; vigilant prey notice faster; prey rarely look up into a tree
         let r=canSee?(vig?1.8:1)/1.2:0;
-        if(r){if(snake.speed<1)r*=0.3;if(inGrass(sh))r*=0.4;if(snake.y>1)r*=0.3;if(d<5)r*=2}
+        if(r){if(snake.speed<1)r*=0.22;if(inGrass(sh))r*=0.4;if(snake.y>1)r*=0.3;if(d<5)r*=2}
         if(r>rate){rate=r;src=sh}
         if(snake.speed>5&&d<9)lunge=sh; // ~0.25 s reaction time to a lunge
       }
       this.aware=clamp((this.aware||0)+(rate?rate*dt:-dt*0.25),0,1.2);
       if(lunge){this.aware+=dt*4;src=src||lunge}
+      if(!human&&src&&!lunge&&this.aware>0.45&&this.aware<1&&this.herd.mode==='graze')this.herd.edgeAway(world,src); // vigilance: they eye a resting snake and move off
       if(this.aware>=1&&src)this.alarm(world,src);
     }
     let speed=0,goal=this.goal;
     if(human){
       if(this.state==='flee'){speed=5.2;if(now>this.fleeUntil||dist(this.pos,this.goal)<2){this.state='idle';this.timer=this.regroup?rand(20,35):rand(3,8);this.regroup=false}}
       else if(this.state==='idle'){this.timer-=dt;this.h+=Math.sin(now*0.9+this.id*2)*dt*(now<this.vigilantUntil?1.2:0.4);if(this.timer<=0)this.pickGoal(world)}
-      else if(this.state==='walk'){speed=this.goalSpeed;if(dist(this.pos,this.goal)<1.5){this.state='idle';this.timer=this.dwell;speed=0}
-        else if(this.atPond&&now<world.pondAvoidUntil)this.pickGoal(world)}
+      else if(this.state==='walk'){speed=this.goalSpeed;
+        if(dist(this.pos,this.goal)<1.5&&this.atPond&&this.shoreLegs>0&&now>world.pondAvoidUntil){ // a stroll along the shore (checking the water, looking for a spot)
+          this.shoreLegs--;const o=this.shorePond,a=headingOf(sub(this.pos,o))+(Math.random()<0.5?1:-1)*rand(0.5,1.1);this.goal={x:o.x+Math.cos(a)*(o.r+rand(1.2,2.2)),z:o.z+Math.sin(a)*(o.r+rand(1.2,2.2))};this.goalSpeed=Math.min(this.goalSpeed,1.4)}
+        else if(dist(this.pos,this.goal)<1.5){this.state='idle';this.timer=this.dwell;speed=0}
+        else if(this.atPond&&(now<world.pondAvoidUntil||!this.pondOK(nearestPond(this.goal))))this.pickGoal(world)}
     }else{ // capybara: follow the herd's anchor; flee with the herd; swim
       const hd=this.herd;goal=hd.slot(this);const d=dist(this.pos,goal);
       if(this.state==='flee'){speed=this.swimming?2.3:4.2;if(d<1.2||now>this.fleeUntil){this.state='herd'}}
@@ -443,7 +521,27 @@ class Herd{
   constructor(id,pond,members){
     this.id=id;this.pond=pond;this.members=members;members.forEach(m=>{m.herd=this;m.homePond=pond;m.state='herd'});
     this.anchor=add(pond,mul(hdir(Math.random()*TAU),pond.r+6));this.goal={...this.anchor};
-    this.mode='graze';this.moving=false;this.timer=rand(5,15);this.alarmUntil=0;this.drankIn=-1;this.wallowed=false;this.spin=Math.random()*TAU;
+    this.mode='graze';this.moving=false;this.timer=rand(5,15);this.alarmUntil=0;this.spin=Math.random()*TAU;
+    this.danger=new Map();this.plan=[];this.planDay=-1;this.edgeAwayAt=-99;
+  }
+  // multi-day memory of danger per pool (a kill or an attack there): the herd avoids that pool for days
+  dangerOf(o){const e=this.danger.get(o);return e?e.v*Math.exp(-(clock.t-e.t)/(3*clock.dayLen)):0}
+  noteDanger(o,v){if(o)this.danger.set(o,{v:this.dangerOf(o)+v,t:clock.t})}
+  // each calendar day (decided around midnight): which pool to graze by, and when to drink / wallow (dawn and dusk mostly, varying)
+  planTheDay(world){
+    this.planDay=dayIndex();let best=null;
+    for(const o of PONDS){const sc=(o===this.pond?0.7:0)+rand(-0.45,0.45)-1.5*this.dangerOf(o)-dist(o,this.anchor)/70-0.4*world.fearAt(o,o.r+15);if(!best||sc>best.sc)best={o,sc}}
+    if(best.o!==this.pond&&this.mode!=='refuge'){this.pond=best.o;this.mode='graze';this.moving=true;this.goal=this.grazeSpot(world);this.timer=rand(40,70);world.event(`A capybara herd heads to ${best.o.name} for the day`)}
+    const hot=world.weather.dayTemp>0.03;this.plan=[];
+    if(Math.random()<0.75)this.plan.push({at:rand(0.205,0.29),k:'drink'});
+    if(hot&&Math.random()<0.6)this.plan.push({at:rand(0.42,0.58),k:'wallow'});else if(Math.random()<0.25)this.plan.push({at:rand(0.4,0.6),k:'drink'});
+    if(Math.random()<0.85)this.plan.push({at:rand(0.7,0.79),k:'drink'});
+  }
+  edgeAway(world,from){ // a snake lying in view: no panic, the herd just grazes away from it
+    if(clock.t-this.edgeAwayAt<30)return;this.edgeAwayAt=clock.t;
+    const g=clampIsland(add(this.anchor,mul(norm(sub(this.anchor,from)),rand(12,18))),8);if(pondAt(g,1))return;
+    this.goal=g;this.moving=true;this.timer=rand(20,35);world.addFear(from,120);
+    if(!world.lastEdgeEv||clock.t-world.lastEdgeEv>60){world.lastEdgeEv=clock.t;world.event('Capybaras eye a snake lying in the open and drift away')}
   }
   slot(p){
     const i=this.members.indexOf(p),n=this.members.length,o=this.pond;
@@ -476,14 +574,14 @@ class Herd{
     else{this.anchor=clampIsland(add(this.anchor,mul(norm(sub(this.anchor,from)),35)),10);where='inland'}
     this.goal={...this.anchor};this.mode='refuge';this.alarmUntil=now+rand(30,50);this.moving=false;
     for(const m of live){m.state='flee';m.aware=0;m.fleeUntil=now+14;m.vigilantUntil=now+240}
-    world.addFear(from);world.event(`${why}: the herd flees ${where}`);
+    world.addFear(from);this.noteDanger(nearestPond(from),dist(from,nearestPond(from))<nearestPond(from).r+8?0.6:0.2);world.event(`${why}: the herd flees ${where}`);
   }
   update(dt,world){
-    const now=clock.t,tod=todOf(clock.day),o=this.pond;this.spin+=dt*0.004;
+    const now=clock.t,o=this.pond;this.spin+=dt*0.004;
     if(this.mode==='refuge'){if(now<this.alarmUntil)return;this.mode='graze';this.moving=true;this.goal=this.grazeSpot(world);this.timer=rand(25,40)}
-    if(tod===0||tod===2)this.drankIn=-1;if(tod===0)this.wallowed=false;
-    if((tod===1||tod===3)&&this.drankIn!==tod&&this.mode==='graze'){this.drankIn=tod;const g=this.shoreSpot(world,0.6);if(g){this.mode='drink';this.goal=g;this.timer=rand(35,60)}}
-    if(tod===2&&sunElev(clock.day)>0.85&&!this.wallowed&&this.mode==='graze'){this.wallowed=true;const g=this.shoreSpot(world,-2.2);if(g){this.mode='wallow';this.goal=g;this.timer=rand(40,70)}}
+    if(dayIndex()!==this.planDay)this.planTheDay(world);
+    for(const it of this.plan){if(it.done||clock.day<it.at)continue;it.done=true;if(this.mode!=='graze'||clock.day>it.at+0.06)continue;
+      const g=this.shoreSpot(world,it.k==='drink'?0.6:-2.2);if(g){this.mode=it.k;this.goal=g;this.timer=it.k==='drink'?rand(25,65):rand(40,80)}}
     const d=dist(this.anchor,this.goal),arrived=d<0.8;
     if(this.mode!=='graze'){ // walking to the drinking / wallowing spot, then staying there for a while
       if(!arrived)this.anchor=add(this.anchor,mul(norm(sub(this.goal,this.anchor)),Math.min(d,0.45*dt)));
@@ -516,6 +614,23 @@ class SnakeBody{
     for(let i=n;i>=0;i--){const q=add(start,mul(back,i*0.2));q.y=0;this.path.push(q)}
     this.maxPath=n+40;this.mouth=0;this.mouthTarget=0;this.submerge=false;this.pres='Normal';this.tongue=false;this.sweep=false;this.sweepT=0;this.bulge=0;
     this.marks=[];this.lastMark={...start}; // a snake leaves a scent trail too (the other snake can smell it)
+    this.odo=0;this.tongueQ=0;this.tongueExt=0;this.tongPh=0;this.tongGap=0;this.sweepA=0;this.sweepGoal=0;this.lookAt=null;this.glanceT=rand(20,60);this.deep=false;
+  }
+  // tongue: bursts of 2-6 flicks, frequent while investigating, occasional while travelling, rare when settled; a new scent or tremor kicks off a burst
+  kickTongue(n){if(this.mouth<0.3&&this.tongueQ<=0&&this.tongGap<=0)this.tongueQ=n||2+Math.floor(Math.random()*5)}
+  micro(dt){
+    if(this.mouth>0.3)this.tongueQ=0;
+    const rate=this.tongue?0.5:this.speed>0.3?0.07:this.deep?0:0.01;
+    if(this.tongueQ<=0){if(this.tongGap>0)this.tongGap-=dt;else if(Math.random()<rate*dt)this.kickTongue()}
+    if(this.tongueQ>0){this.tongPh+=dt/0.34;if(this.tongPh>=1){this.tongPh=0;this.tongueQ--;if(this.tongueQ<=0)this.tongGap=rand(0.5,1.8)}}
+    const ph=this.tongPh;this.tongueExt=this.tongueQ>0?(ph<0.2?ph/0.2:ph<0.65?1:ph<0.85?1-(ph-0.65)/0.2:0):0;
+    // head: turned toward something sensed; scanning in short looks (hold, look elsewhere) when looking around; at rest a rare small shift
+    const toward=this.lookAt?clamp(wrapA(headingOf(sub(this.lookAt,this.head))-this.h),-0.75,0.75):null;
+    if(this.sweep){this.glanceT-=dt;if(this.glanceT<=0){this.glanceT=rand(0.8,2.6);this.sweepGoal=toward!=null&&Math.random()<0.5?toward+rand(-0.15,0.15):rand(-0.8,0.8)}}
+    else if(toward!=null)this.sweepGoal=toward;
+    else if(this.speed<0.1){this.glanceT-=dt;if(this.glanceT<=0){this.glanceT=rand(25,110);this.sweepGoal=Math.random()<0.5?0:rand(-0.35,0.35)}}
+    else this.sweepGoal=0;
+    this.sweepA+=(this.sweepGoal-this.sweepA)*Math.min(1,dt*2.5);
   }
   steerTo(pt,m,turn=1){this.dH=headingOf(sub(pt,this.head));this.tSpeed=BASE_SPEED*m;this.turnMul=turn;this.allowWater=edgeDist(pt)<0.6}
   steerHeading(h,m,turn=1){this.dH=h;this.tSpeed=BASE_SPEED*m;this.turnMul=turn}
@@ -528,7 +643,7 @@ class SnakeBody{
   hiddenToPrey(){return (this.submerge&&this.inWater())||(this.speed<0.3&&inGrass(this.head))||(this.y>1.2&&this.speed<0.4)}
   pushPath(){const last=this.path[this.path.length-1];if(Math.hypot(last.x-this.head.x,last.z-this.head.z,(last.y||0)-this.y)>0.2){this.path.push({x:this.head.x,z:this.head.z,y:this.y});if(this.path.length>this.maxPath)this.path.shift()}}
   update(dt){
-    this.mouth+=clamp(this.mouthTarget-this.mouth,-4*dt,4*dt);this.sweepT+=dt;this.bumped=false;
+    this.mouth+=clamp(this.mouthTarget-this.mouth,-4*dt,4*dt);this.sweepT+=dt;this.bumped=false;this.micro(dt);
     if(!this.route&&this.y>0.05&&this.tSpeed>0&&this.descendFn){const r=this.descendFn(this.dH);if(r&&r.length)this.setRoute(r,BASE_SPEED*0.3,true)} // a ground order while up a tree: climb down first
     if(this.route){
       const target=this.routeAuto?this.routeSpeed:this.tSpeed;this.speed+=clamp(target-this.speed,-12*dt,(target>6?45:4)*dt);let step=Math.max(0,this.speed)*dt;
@@ -536,9 +651,11 @@ class SnakeBody{
         if(hl>0.12*d&&d>1e-4){const hh=Math.atan2(dz,dx);this.h=wrapA(this.h+clamp(wrapA(hh-this.h),-6*dt-0.05,6*dt+0.05))}
         if(d>1e-4)this.pitch+=(Math.atan2(dy,hl)-this.pitch)*Math.min(1,dt*8);
         if(d<=step){this.head={x:q.x,z:q.z};this.y=q.y;step-=d;this.ri++}else{const f=step/d;this.head={x:this.head.x+dx*f,z:this.head.z+dz*f};this.y+=dy*f;step=0}}
+      this.odo+=Math.max(0,this.speed)*dt;
       if(this.ri>=this.route.length){this.routeDone=true;this.speed=0;if(this.routeAuto){this.route=null;this.routeAuto=false}}
       this.pushPath();return;
     }
+    if(this.y>0.05&&this.y<0.45&&!this.route)this.y=Math.max(0,this.y-dt*1.5); // left just above the ground by an interrupted descent: slide down
     if(this.y>0.05){this.speed=0;return} // perched in a tree: holds on where it is
     this.pitch*=Math.max(0,1-dt*4);
     let want=hdir(this.dH);
@@ -557,7 +674,7 @@ class SnakeBody{
     this.speed+=clamp(target-this.speed,-acc*dt,acc*dt);
     const maxT=1.7*this.turnMul*dt*(0.35+Math.min(1,this.speed/2));
     this.h=wrapA(this.h+clamp(wrapA(dh-this.h),-maxT,maxT));
-    this.head=clampIsland(add(this.head,mul(hdir(this.h),this.speed*dt)),3);
+    this.head=clampIsland(add(this.head,mul(hdir(this.h),this.speed*dt)),3);this.odo+=this.speed*dt;
     // trunks are solid: the head (and a lunge) cannot pass through them
     for(const t of TREES){if(Math.abs(t.x-this.head.x)>2.5||Math.abs(t.z-this.head.z)>2.5)continue;const v=sub(this.head,t),d=len(v);
       if(d<t.r+0.35){this.head=add(t,mul(norm(v),t.r+0.35));this.bumped=true;if(this.speed>6)this.speed=0}}
@@ -602,13 +719,14 @@ function coilStep(c,st,m){
    ============================================================ */
 const C=0,S=1,F=2,PARTIAL=3; // PARTIAL: decomposition hit a PausePlan
 const EffectType={PlanOnly:'PlanOnly',PlanAndExecute:'PlanAndExecute',Permanent:'Permanent'};
-const WS_NAMES=['BestContact','TargetVisible','StrikeWindow','HasTrail','InPreyPath','Carrying','AtWater','AtRefuge','InTree','InHomeRange','Hunger','Digesting','Thermal','Stress','TimeOfDay','Season','Breeding','Shedding','DirectorOrder','Claim','Intent','RivalNear','RivalIntent','RivalKill','Carcass'];
+const WS_NAMES=['BestContact','TargetVisible','StrikeWindow','HasTrail','InPreyPath','Carrying','AtWater','AtRefuge','InTree','InHomeRange','Hunger','Digesting','Thermal','Stress','TimeOfDay','Season','Breeding','Shedding','DirectorOrder','Claim','Intent','RivalNear','RivalIntent','RivalKill','Carcass','Sky','RestPref','HuntMood'];
 const WS={};WS_NAMES.forEach((n,i)=>WS[n]=i);
 const B=['0','1'];
 const WS_LABELS={BestContact:['none','scent','vibration','sight'],TargetVisible:B,StrikeWindow:B,HasTrail:B,InPreyPath:B,Carrying:B,AtWater:B,AtRefuge:B,InTree:B,InHomeRange:['inside','outside'],
   Hunger:['sated','low','hungry','starving'],Digesting:['no','sluggish','heavy'],Thermal:['ok','cold','hot'],Stress:['calm','wary','threatened'],TimeOfDay:TOD_NAMES,Season:['wet','dry'],
   Breeding:['none','receptive','tracking','aggregated','post-mating'],Shedding:['no','opaque'],DirectorOrder:['none','rush','camp','withdraw'],Claim:['free','mine','other'],Intent:['idle','hunting','feeding','digesting','breeding','fleeing'],
-  RivalNear:['none','sensed','near','close'],RivalIntent:['none','idle','hunting','feeding','digesting','breeding','fleeing'],RivalKill:['none','on the ground'],Carcass:['none','free']};
+  RivalNear:['none','sensed','near','close'],RivalIntent:['none','idle','hunting','feeding','digesting','breeding','fleeing'],RivalKill:['none','on the ground'],Carcass:['none','free'],
+  Sky:['clear','overcast','rain'],RestPref:['none','sun','dappled','cover','cool'],HuntMood:['keen','fasting']};
 const INTENT={idle:0,hunting:1,feeding:2,digesting:3,breeding:4,fleeing:5};
 const URGENT=new Set([WS.Stress,WS.DirectorOrder]);
 
@@ -767,20 +885,48 @@ const sl=c=>c.getState(WS.Digesting)>=1?0.6:1;
 const DRAG_DEPTH=4.2,MEAL_DAYS={human:8,capybara:6,snake:5}; // a big meal lasts days (game days of 360 s)
 function mkOp(name,def){return ()=>Object.assign({name,t:0,minDwell:0},def)}
 const prey_=c=>c.forcedTarget||(c.target&&c.target.prey);
+/* Ground moves: long ones follow an A* route over the cost grid (shorelines, reeds, tree cover; open ground avoided by day) or an arc
+   through the shallows; the heading wanders a little (a snake does not walk a ruled line); on land the snake travels stop-and-go:
+   it halts at the edge of cover before crossing open ground, and now and then in the open, flicking its tongue (longer when uneasy). */
 function moveOp(name,getP,m,o={}){return mkOp(name,{
-  start(c){this.p=getP(c);c.moveGoal=this.p;c.snake.submerge=false;c.snake.pres=o.pres||'Moving';c.snake.tongue=!!o.tongue;this.last={...c.snake.head};this.lastT=0},
-  update(c){
-    if(!this.p)return F;
-    if(dist(c.snake.head,this.p)<(o.arrive||2.5))return S;
-    if(this.t-this.lastT>8){if(dist(this.last,c.snake.head)<1)return F;this.last={...c.snake.head};this.lastT=this.t}
+  start(c){const s=c.snake;this.p=getP(c);c.moveGoal=this.p;s.submerge=false;s.pres=o.pres||'Moving';s.tongue=!!o.tongue;this.last={...s.head};this.lastT=0;
+    this.wp=null;this.wi=0;this.wob=rand(-0.2,0.2);this.surge=0;this.pause=0;this.run=0;this.nextPause=rand(5,14);this.wasCover=null;this.prev={...s.head};
+    if(!this.p)return;const tod=c.getState(WS.TimeOfDay),night=tod===0||tod===3,D=dist(s.head,this.p);
+    if(o.path)this.wp=o.path(c,this.p);
+    else if(o.route!==false&&D>9)this.wp=navRoute(s.head,this.p,c.p.avoidWater?'tree':'pool',night);
+    if(this.wp&&this.wp.length)c.moveGoal=this.wp[this.wp.length-1]},
+  update(c,dt){
+    const s=c.snake;if(!this.p)return F;
+    if(dist(s.head,this.p)<(o.arrive||2.5))return S;
     if(o.timeout&&this.t>o.timeout)return F;
-    c.snake.steerTo(this.p,(typeof m==='function'?m(c):m)*sl(c));return C;
+    if(this.pause>0){this.pause-=dt;s.halt();this.lastT=this.t;this.last={...s.head};if(this.pause<=0)s.lookAt=null;return C}
+    if(this.t-this.lastT>8){if(dist(this.last,s.head)<1)return F;this.last={...s.head};this.lastT=this.t}
+    let tg=this.p;if(this.wp){while(this.wi<this.wp.length-1&&dist(s.head,this.wp[this.wi])<2.6)this.wi++;tg=this.wp[this.wi]}
+    // stop-and-go on land (not when fleeing, dragging or rushing)
+    const land=s.y<0.5&&edgeDist(s.head)>0.4;
+    if(o.pause!==false){const step=dist(s.head,this.prev);this.prev={...s.head};this.run+=step;
+      const cover=inGrass(s.head)||edgeDist(s.head)<3.5||TREES.some(t=>Math.abs(t.x-s.head.x)<5&&Math.abs(t.z-s.head.z)<5&&dist(t,s.head)<4.5);
+      const uneasy=1+2*c.drives.stress,dayK=c.getState(WS.TimeOfDay)===2?1:0.6;
+      if(land&&this.wasCover&&!cover&&dist(s.head,this.p)>6){this.pause=rand(1.2,4)*uneasy*dayK;s.kickTongue();s.lookAt=add(s.head,mul(hdir(s.h),10))}
+      else if(this.run>this.nextPause*(land?1:1.4)){this.run=0;this.nextPause=rand(4,13);this.pause=(land?rand(1,3.6):rand(0.8,2.8))*uneasy;if(land||Math.random()<0.5)s.kickTongue()}
+      this.wasCover=cover;if(this.pause>0){s.halt();return C}}
+    // meander: a slowly wandering heading offset and speed surges (smooth noise, not per-frame dice)
+    this.wob=clamp(this.wob-this.wob*dt/4.5+gauss()*0.55*Math.sqrt(dt),-1,1);this.surge=clamp(this.surge-this.surge*0.6*dt+gauss()*0.5*Math.sqrt(dt),-1,1);
+    const dg=dist(s.head,tg),w=dg>4&&o.wander!==false?this.wob:0,h=headingOf(sub(tg,s.head))+w;
+    s.steerTo(add(s.head,mul(hdir(h),Math.max(2,Math.min(6,dg)))),(typeof m==='function'?m(c):m)*sl(c)*(1+0.12*this.surge));s.allowWater=edgeDist(tg)<0.6;
+    return C;
   },
-  stop(c,how){c.snake.halt();c.moveGoal=null;c.snake.tongue=false;if(o.onStop)o.onStop(c,how)}
+  stop(c,how){c.snake.halt();c.moveGoal=null;c.snake.tongue=false;c.snake.lookAt=null;if(o.onStop)o.onStop(c,how)}
 })}
 const fnOr=(v,c)=>typeof v==='function'?v(c):v;
+// stop-and-go for land hunting moves: in the open (not in cover) the snake halts now and then to look and scent before going on
+function openPause(op,c,dt){const s=c.snake;if(op.pz>0){op.pz-=dt;s.halt();return true}
+  const pr=op.pp||s.head;op.run=(op.run||0)+dist(s.head,pr);op.pp={...s.head};
+  if(s.y<0.5&&edgeDist(s.head)>2&&!inGrass(s.head)&&op.run>(op.nx||(op.nx=rand(7,14)))){op.run=0;op.nx=rand(7,14);op.pz=rand(0.8,2.4)*(c.getState(WS.TimeOfDay)===2?1.3:0.8);s.kickTongue();s.halt();return true}
+  return false}
 function settleRoute(c,o,end){ // waypoints: into the pool, then along an arc of ~one body length that ends at the rest / ambush point
-  const s=c.snake,segs=s.segments();if(segs.filter(q=>edgeDist(q)<-0.3).length>=segs.length*0.75&&(!end||dist(s.head,end)<2))return null;
+  const s=c.snake,segs=s.segments(),wet=segs.filter(q=>edgeDist(q)<-0.3).length/segs.length;if(wet>=0.75&&(!end||dist(s.head,end)<2))return null;
+  if(wet>=0.6)return end&&dist(s.head,end)>=2?[end]:null; // the body is mostly in the water already: just glide to the spot
   o=o||nearestPond(s.head);const D=Math.min(o.r*0.4,4),R=o.r-D,a0=headingOf(sub(s.head,o)),wps=[];
   const need=Math.min(Math.PI*1.2,s.p.segs*s.p.spacing*0.8/R),ae=end?headingOf(sub(end,o)):a0+need;
   const as=Math.abs(wrapA(ae-need-a0))<Math.abs(wrapA(ae+need-a0))?ae-need:ae+need,sg=Math.sign(ae-as);
@@ -791,26 +937,38 @@ function settleRoute(c,o,end){ // waypoints: into the pool, then along an arc of
 function coilRestOp(name,o={}){return mkOp(name,{
   breakOn:o.breakOn,
   start(c){
-    if(o.onStart)o.onStart(c);
-    this.minDwell=fnOr(o.minDwell,c)||0;this.max=fnOr(o.maxTime,c);this.doneAt=null;c.snake.submerge=!!o.submerge;c.snake.pres=fnOr(o.pres,c)||'Coiled';
+    const s=c.snake;if(o.onStart)o.onStart(c,this);
+    this.minDwell=fnOr(o.minDwell,c)||0;this.max=fnOr(o.maxTime,c);this.doneAt=null;s.submerge=!!o.submerge;s.pres=fnOr(o.pres,c)||'Coiled';
+    // the coil's size and number of turns vary with the room there and the animal (not one stamped shape)
+    this.cr=[(o.r0||3)*rand(0.85,1.2),(o.r1||1.4)*rand(0.9,1.15),(o.turns||1.25)*(o.tight?1:rand(0.8,1.3))];
+    // already lying coiled right here (a relabelled rest, e.g. day lie-up -> night rest): keep the coil, do not swim a new loop
+    const lc=c.lastCoil;
+    if(lc&&!o.tight&&o.keep!==false&&s.odo-lc.odo<2&&dist(s.head,lc)<3&&(o.wet?lc.wet:o.dry?lc.dry:true)){this.wade=null;this.coil={done:true};this.kept=true;return}
     // wet rests first swim out and along the pool so the whole body lies in water, never on the bank
-    this.wade=o.wet?settleRoute(c,o.wet==='site'?c.ambushPond:null,o.wet==='site'?c.ambushPoint:null):null;this.wi=0;
-    if(!this.wade)this.coil=coilInit(c,o.r0||3,o.r1||1.4,o.turns||1.25,o.tight,o.dry);
+    const rs=o.wet==='rest'&&c.restSite;
+    this.wade=o.wet?settleRoute(c,o.wet==='site'?c.ambushPond:rs?rs.o:null,o.wet==='site'?c.ambushPoint:rs?rs.p:null):null;this.wi=0;
+    if(!this.wade)this.coil=coilInit(c,...this.cr,o.tight,o.dry);
   },
   update(c,dt){
+    if(o.onTick)o.onTick(c,this,dt);
     if(this.wade){const w=this.wade[this.wi];c.snake.steerTo(w,0.4);c.moveGoal=w;
-      if(dist(c.snake.head,w)<1.6&&++this.wi>=this.wade.length||this.t>60){this.wade=null;c.moveGoal=null;this.coil=coilInit(c,o.r0||3,o.r1||1.4,o.turns||1.25,o.tight,o.dry)}return C}
+      if(dist(c.snake.head,w)<1.6&&++this.wi>=this.wade.length||this.t>60){this.wade=null;c.moveGoal=null;this.coil=coilInit(c,...this.cr,o.tight,o.dry)}return C}
     if(!this.coil.done)coilStep(c,this.coil,o.mul||0.45);
-    else{c.snake.halt();c.snake.sweep=!o.onIdle;if(o.onIdle)o.onIdle(c);if(this.doneAt===null)this.doneAt=this.t}
+    else{c.snake.halt();if(o.onIdle)o.onIdle(c);if(this.doneAt===null)this.doneAt=this.t}
+    if(o.done&&o.done(c,this))return S;
     if(o.hold!==undefined&&this.doneAt!==null&&this.t-this.doneAt>=fnOr(o.hold,c))return S;
     if(this.max&&this.t>=this.max)return S;
     return C;
   },
-  stop(c,how){c.snake.sweep=false;c.snake.halt();if(o.onStop)o.onStop(c,how)}
+  stop(c,how){const s=c.snake;s.halt();if(this.coil&&this.coil.done)c.lastCoil={x:s.head.x,z:s.head.z,odo:s.odo,wet:s.inWater()&&!o.dry,dry:!!o.dry};if(o.onStop)o.onStop(c,how,this)}
 })}
+function holdStillOp(name,pres,sub){return mkOp(name,{minDwell:4,
+  start(c){const s=c.snake;s.halt();if(sub){s.submerge=true;s.deep=true}s.pres=pres;s.tongue=false;s.tongueQ=0;this.calm=0;this.linger=rand(4,16);s.lookAt=c.threatPoint?{...c.threatPoint}:null},
+  update(c,dt){const s=c.snake;s.halt();if(sub)s.submerge=true;if(c.drives.stress<0.3){this.calm+=dt;if(this.calm>this.linger)return S}else this.calm=0;return this.t>120?S:C},
+  stop(c){const s=c.snake;s.deep=false;s.lookAt=null;c.noteSiteFear(s.head,0.6)}})}
 const Ops={
   succeed:mkOp('Succeed',{update:()=>S}),
-  idle:mkOp('Idle',{start(c){c.snake.halt();c.snake.pres='Normal';c.snake.submerge=false},update(c){c.snake.halt();c.snake.sweep=true;return C},stop(c){c.snake.sweep=false}}),
+  idle:mkOp('Idle',{start(c){c.snake.halt();c.snake.pres='Normal';c.snake.submerge=false},update(c){c.snake.halt();return C}}),
   telegraph:mkOp('Telegraph',{
     start(c){this.dur=rand(1,2);c.snake.mouthTarget=1;c.snake.pres='Telegraph';c.snake.submerge=false},
     update(c){const p=prey_(c);if(!p||!p.active)return F;c.snake.steerTo(p.pos,0.08,2.5);return this.t>=this.dur?S:C},
@@ -821,7 +979,10 @@ const Ops={
       this.fromWater=c.snake.submerge&&c.snake.inWater();c.snake.submerge=false;
       this.drop=c.snake.y>0.3&&!!p;if(this.drop){c.snake.setRoute([{x:lead.x,z:lead.z,y:0}],BASE_SPEED*3.2);c.snake.perch=null;this.fromWater=true} // from a limb: a falling strike onto the prey below
       // not every strike lands: alert prey, or a strike made in the open, may leap aside
-      this.dodger=p&&p.kind!=='noise'&&Math.random()<(clock.t<p.vigilantUntil?0.4:0.18)+(this.fromWater?0:0.17)?p:null;c.snake.pres=this.drop?'Drop strike':this.fromWater?'Ambush strike':'Lunge'},
+      // misses: alert prey, a strike at the limit of its reach, or one made in the open are more likely to fail; capybaras are jumpy
+      const alert=p&&(clock.t<p.vigilantUntil||(p.aware||0)>0.5),far=p?clamp(dist(p.pos,c.snake.head)/c.p.strikeRange,0,1.4)*(this.drop?0.6:1):0;
+      const missP=p?(alert?0.5:0.28)+(this.fromWater?0:c.p.sizeClass==='small'?0.05:0.15)+(this.drop?0.1:0)+0.3*Math.max(0,far-0.8)+(p.kind==="capybara"?0.05:0)-(p.kind==="human"&&todOf(clock.day)===0?0.08:0):0;
+      this.dodger=p&&p.kind!=='noise'&&Math.random()<missP?p:null;c.snake.pres=this.drop?'Drop strike':this.fromWater?'Ambush strike':'Lunge'},
     update(c){
       if(this.drop){const p=prey_(c);if(p&&p.active&&p.state!=='caught'&&p!==this.dodger&&dist(p.pos,c.snake.head)<1.9&&c.snake.y<1.5){c.capture(p);return S}
         if(c.snake.routeDone||this.t>1.6)return F;return C}
@@ -831,33 +992,41 @@ const Ops={
       for(const p of c.world.prey){if(p.kind==='noise'||!p.active||p.state==='caught'||p===this.dodger)continue;if(dist(p.pos,m)<1.7+(p.kind==='capybara'?0.3:0)&&!losBlocked(c.snake.head,p.pos)){c.capture(p);return S}}
       return this.t>=0.9?F:C;
     },
-    stop(c,how){c.lunging=false;c.snake.mouthTarget=c.carried?0.55:0;if(this.drop){const s=c.snake;s.clearRoute();if(s.y>0.05)s.setRoute([{x:s.head.x+Math.cos(s.h)*0.6,z:s.head.z+Math.sin(s.h)*0.6,y:0}],BASE_SPEED*1.2,true)}else c.snake.halt();if(how==='failure'){c.ev(this.blocked?'Strike blocked by a tree trunk':this.dodger?`Strike missed: ${this.dodger.name} leapt aside`:'Strike missed');if(this.dodger&&this.dodger.state!=='flee')this.dodger.alarm(c.world,c.snake.head);c.lastMissAt=clock.t}}
+    stop(c,how){c.lunging=false;c.snake.mouthTarget=c.carried?0.55:0;if(this.drop){const s=c.snake;s.clearRoute();if(s.y>0.05)s.setRoute([{x:s.head.x+Math.cos(s.h)*0.6,z:s.head.z+Math.sin(s.h)*0.6,y:0}],BASE_SPEED*1.2,true)}else c.snake.halt();if(how==='failure'){c.ev(this.blocked?'Strike blocked by a tree trunk':this.dodger?`Strike missed: ${this.dodger.name} leapt aside`:'Strike missed');if(this.dodger&&this.dodger.state!=='flee')this.dodger.alarm(c.world,c.snake.head);
+      c.lastMissAt=clock.t;c.missCool=rand(1,2)*HOUR;c.missPending=true;c.missFromWater=this.fromWater}}
   }),
   pursue:mkOp('Pursue',{
     start(c){c.drives.fatigue=Math.min(1,c.drives.fatigue+0.3);c.snake.pres='Pursuit'},
     update(c){const p=prey_(c);if(!p||!p.active)return F;if(c.ws[WS.StrikeWindow]===1)return S;if(this.t>4)return F;c.snake.steerTo(p.pos,1.6*sl(c),1.5);return C},
     stop(c){c.snake.halt()}
   }),
+  // a stalk is abandoned when the quarry has clearly noticed the snake, or after a while without closing in (then not retried at once)
   sneak:mkOp('Sneak',{
-    start(c){c.snake.pres='Sneak';c.snake.submerge=false},
-    update(c){const p=prey_(c);if(!p||!p.active)return F;c.snake.submerge=c.snake.inWater();if(dist(c.snake.head,p.pos)<=c.p.strikeRange)return S;c.snake.steerTo(p.pos,0.3*sl(c));return C},
-    stop(c){c.snake.halt()}
+    start(c){c.snake.pres='Sneak';c.snake.submerge=false;this.limit=rand(25,60)},
+    update(c){const p=prey_(c);if(!p||!p.active)return F;c.snake.submerge=c.snake.inWater();if(dist(c.snake.head,p.pos)<=c.p.strikeRange)return S;
+      if(this.t>this.limit||((p.aware||0)>0.7&&dist(c.snake.head,p.pos)>c.p.strikeRange+1.5)){this.gaveUp=true;return F}
+      c.snake.lookAt=p.pos;c.snake.steerTo(p.pos,0.3*sl(c));return C},
+    stop(c){c.snake.halt();c.snake.lookAt=null;if(this.gaveUp&&c.target)c.target.stalkGiveUpAt=clock.t}
   }),
   creep:mkOp('Creep',{
-    start(c){c.snake.pres='Creep';c.snake.submerge=false},
+    start(c){c.snake.pres='Creep';c.snake.submerge=false;this.limit=rand(25,60)},
     update(c){const p=prey_(c);if(!p||!p.active)return F;c.snake.submerge=c.snake.inWater();if(dist(c.snake.head,p.pos)<=c.p.strikeRange)return S;
-      if(p.looksAt(c.snake.head))c.snake.halt();else c.snake.steerTo(p.pos,0.2*sl(c));return C},
-    stop(c){c.snake.halt()}
+      if(this.t>this.limit||((p.aware||0)>0.7&&dist(c.snake.head,p.pos)>c.p.strikeRange+1.5)){this.gaveUp=true;return F}
+      c.snake.lookAt=p.pos;if(p.looksAt(c.snake.head))c.snake.halt();else c.snake.steerTo(p.pos,0.2*sl(c));return C},
+    stop(c){c.snake.halt();c.snake.lookAt=null;if(this.gaveUp&&c.target)c.target.stalkGiveUpAt=clock.t}
   }),
-  goToInterest:moveOp('GoToInterest',c=>{const b=c.target;if(!b)return null;c.investigatePoint=clampIsland(add(b.lastKnown,randInCircle(b.positionError)),5);return c.investigatePoint},0.4,{tongue:true,arrive:3}),
-  lookAround:mkOp('LookAround',{start(c){this.dur=rand(3,6);c.snake.halt();c.snake.tongue=true;c.snake.sweep=true},update(c){c.snake.halt();return this.t>=this.dur?S:C},stop(c){c.snake.tongue=false;c.snake.sweep=false}}),
+  goToInterest:moveOp('GoToInterest',c=>{const b=c.target;if(!b)return null;c.investigatePoint=clampIsland(add(b.lastKnown,randInCircle(b.positionError)),5);return c.investigatePoint},0.4,{tongue:true,arrive:3,route:false}),
+  lookAround:mkOp('LookAround',{start(c){this.dur=rand(3,6);c.snake.halt();c.snake.tongue=true;c.snake.sweep=true;c.snake.lookAt=c.target?c.target.lastKnown:null;c.snake.kickTongue()},update(c){c.snake.halt();return this.t>=this.dur?S:C},
+    stop(c){c.snake.tongue=false;c.snake.sweep=false;c.snake.lookAt=null;if(c.target)c.target.investigatedAt=clock.t}}),
   cutAcross:mkOp('CutAcross',{
     stop(c,how){c.snake.halt();c.moveGoal=null;if(how==='failure')c.cutCooldownUntil=clock.t+30},
     recalc(c){const b=c.target;if(!b)return;const d=b.travelDir||norm(sub(b.lastKnown,c.snake.head));this.p=clampIsland(add(b.lastKnown,mul(d,18)),8);c.moveGoal=this.p;this.rt=this.t},
     start(c){this.rt=0;this.recalc(c);c.snake.submerge=false},
-    update(c){
+    update(c,dt){
       if(!c.target||!this.p)return F;if(this.t-this.rt>2)this.recalc(c);if(this.t>40)return F;
+      if(edgeDist(c.snake.head)>30&&c.getState(WS.Hunger)<3)return F; // water leash: not this far inland unless starving
       if(c.ws[WS.InPreyPath]===1&&dist(c.snake.head,this.p)<8)return S;
+      if(openPause(this,c,dt))return C;
       const far=dist(c.snake.head,this.p)>40;c.snake.pres=far?'Rush':'CutAcross';c.snake.steerTo(this.p,(far?0.8:0.4)*sl(c));return C;
     },
   }),
@@ -866,35 +1035,20 @@ const Ops={
     pickNext(c){const p=c.target&&c.target.prey;this.m=null;if(!p)return;let bd=1e9;
       for(const m of p.liveMarks(clock.t)){if(m.t<=this.lastT)continue;const d=dist(m,c.snake.head);if(d<40&&d<bd){bd=d;this.m=m}}c.moveGoal=this.m},
     start(c){this.lastT=-1;this.pickNext(c);c.snake.tongue=true;c.snake.pres='Trailing';c.snake.submerge=false},
-    update(c){if(!c.target)return F;if(!this.m)return S;if(dist(c.snake.head,this.m)<2){this.lastT=this.m.t;this.pickNext(c);if(!this.m)return S}
-      c.snake.steerTo(this.m,0.4*sl(c));return C},
+    update(c,dt){if(!c.target)return F;if(!this.m)return S;if(!c.p.arboreal&&edgeDist(c.snake.head)>30&&c.getState(WS.Hunger)<3)return F;if(c.p.arboreal&&dist(c.snake.head,GROVE_C)>35)return F;if(dist(c.snake.head,this.m)<2){this.lastT=this.m.t;this.pickNext(c);if(!this.m)return S}
+      if(openPause(this,c,dt))return C;c.snake.steerTo(this.m,0.4*sl(c));return C},
     stop(c){c.snake.halt();c.snake.tongue=false;c.moveGoal=null}
   }),
-  chooseWaterSite:mkOp('ChooseSite',{
-    start(c){
-      const sn=c.snake.head,now=clock.t;c.ambushSettledAt=null;
-      if(c.ambushPoint&&!c.ambushStale()&&dist(sn,c.ambushPoint)<40){c.ev(`Returns to its ambush site at ${c.ambushPond.name}`);return}
-      // by day a non-bold snake does not cross open land: it only shifts within the nearest pool
-      const day=c.getState(WS.TimeOfDay)===2&&!c.p.boldByDay;
-      const ponds=day?[nearestPond(sn)]:PONDS.filter(o=>dist(o,c.home)<c.homeRange());
-      let best=null; // rank shores by recent prey traffic (game trails, drinking spots): densest cluster of fresh scent marks at the edge
-      for(const o of ponds){const pts=[];for(const p of c.world.prey){if(p.kind==='noise')continue;for(const m of p.liveMarks(now))if(now-m.t<200&&Math.abs(dist(m,o)-o.r)<9)pts.push(m)}
-        let dm=null,dn=0;for(const m of pts){let n=0;for(const q of pts)if(dist(m,q)<8)n++;if(n>dn){dn=n;dm=m}}
-        const sc=Math.min(dn,8)+Math.random()*2.5-Math.max(0,dist(sn,o)-o.r)/25-(o===c.ambushPond&&dn<2?1.5:0);
-        if(!best||sc>best.sc)best={o,sc,m:dm,n:dn}}
-      const o=best.o;c.ambushPond=o;c.ambushPoint=edgePoint(o,best.m||add(o,hdir(Math.random()*TAU)),c.p.sizeClass==='small'?1.6:2.2);
-      c.ambushChosenAt=now;c.ambushStaleAt=Infinity;
-      c.ev(`Chose ambush site at ${o.name}${best.n?' by a game trail':''}`);
-    },
-    update:()=>S
-  }),
-  goToSite:moveOp('GoToSite',c=>c.ambushPoint,0.4,{arrive:1.8,pres:'Relocating'}),
+  // ambush site: where prey traffic is now (fresh scent at the edge) and where it has been over the past days (pool memory),
+  // away from places it waited in vain or missed recently, and close by day (no long day crossings unless bold)
+  chooseWaterSite:mkOp('ChooseSite',{start(c){c.chooseAmbushSite()},update:()=>S}),
+  goToSite:moveOp('GoToSite',c=>c.ambushPoint,0.4,{arrive:1.8,pres:'Relocating',path:(c,p)=>c.ambushPond&&pondAt(c.snake.head,0.5)===c.ambushPond?shoreArc(c.ambushPond,c.snake.head,p,2.5):null}),
   submerge:coilRestOp('Submerge',{r0:2.2,r1:1.2,turns:1,submerge:true,pres:'Submerged',wet:'site',
-    onStart(c){if(c.ambushSettledAt==null){c.ambushSettledAt=clock.t;c.ambushStaleAt=clock.t+c.p.patience*(c.getState(WS.Digesting)>=1?1.5:1)}},
+    onStart(c){if(c.ambushSettledAt==null){c.ambushSettledAt=clock.t;c.ambushStaleAt=clock.t+c.p.patience*rand(0.7,1.4)*(c.getState(WS.Digesting)>=1?1.5:1)*(c.getState(WS.TimeOfDay)===2?1.5:c.getState(WS.TimeOfDay)===0?0.75:1);c.logSite(c.ambushPoint,'ambush')}},
     maxTime:c=>Math.max(8,c.ambushStaleAt-clock.t),minDwell:c=>Math.min(c.p.patience*0.25,Math.max(8,c.ambushStaleAt-clock.t)),
     breakOn:c=>c.ws[WS.StrikeWindow]===1||c.ws[WS.Carrying]===1||c.waitCond(c),
     onIdle(c){const b=c.target;c.snake.steerTo(b&&b.confidence>0.3?b.lastKnown:add(c.snake.head,norm(sub(c.snake.head,c.ambushPond||nearestPond(c.snake.head)))),0,1)}, // face the shore / the prey
-    onStop:(c,how)=>{if(how==='success'){c.ambushStaleAt=clock.t;if(c.p.boldness>=0.5||c.getState(WS.Hunger)===3)c.forageUntil=clock.t+c.p.patience*2}}}),
+    onStop:(c,how)=>{if(how==='success'){c.ambushStaleAt=clock.t;c.waitedInVain(c.ambushPoint);if(c.p.boldness>=0.5||c.getState(WS.Hunger)===3)c.forageUntil=clock.t+c.p.patience*2}}}),
   holdAmbush:mkOp('HoldAmbush',{
     minDwell:8,breakOn:c=>c.ws[WS.StrikeWindow]===1||c.ws[WS.Carrying]===1,
     start(c){const s=c.snake;s.submerge=true;s.pres='Ambush';s.tongue=false;c.ambushStaleAt=Math.max(c.ambushStaleAt,clock.t+c.p.patience*0.5)}, // traffic here: worth waiting longer
@@ -904,22 +1058,78 @@ const Ops={
       // quarry at the water's edge: glide slowly underwater toward the nearest water point; otherwise hold still and track it
       let g=edgePoint(o,lk,1.6);
       if(!wet&&dist(g,c.ambushPoint)>4)g=add(c.ambushPoint,mul(norm(sub(g,c.ambushPoint)),4));
+      s.lookAt=lk;
       if(dist(s.head,g)>1.5&&dist(s.head,lk)>c.p.strikeRange*0.9){s.steerTo(g,0.22,1.2);if(wet)c.ambushPoint=edgePoint(o,s.head,1.6);c.moveGoal=g}
       else{s.steerTo(lk,0,1.3);c.moveGoal=null}
       return C;
     },
-    stop(c){c.snake.halt();c.moveGoal=null;c.lastHoldEnd=clock.t}
+    stop(c){c.snake.halt();c.moveGoal=null;c.lastHoldEnd=clock.t;c.snake.lookAt=null}
   }),
+  // a land strike from cover: the neck draws back into an S, no gape (the open-mouth display is only a defensive threat)
+  brace:mkOp('Brace',{start(c){this.dur=rand(0.25,0.6);c.snake.pres='Brace';c.snake.submerge=false;c.snake.tongueQ=0},update(c){const p=prey_(c);if(!p||!p.active)return F;c.snake.steerTo(p.pos,0.05,2.5);return this.t>=this.dur?S:C},stop(c){c.snake.halt()}}),
+  // after a miss: slide back under (from water) or freeze (on land), watch, then either settle again or give the place up
+  missRecover:mkOp('RecoverFromMiss',{
+    start(c){c.missPending=false;const s=c.snake,o=nearestPond(s.head);this.dur=rand(5,14);this.back=null;s.tongue=false;
+      if(!c.p.arboreal&&(c.missFromWater||edgeDist(s.head)<2.5)){this.back=edgePoint(o,s.head,Math.min(o.r*0.4,3.2+rand(0,1.5)));s.pres='Sinks back'}else s.pres=s.y>0.6?'Still':'Freezes';
+      const p=prey_(c);s.lookAt=p?{...p.pos}:null;
+      if(c.ambushPoint&&dist(s.head,c.ambushPoint)<12){c.logSite(c.ambushPoint,'ambush',true);c.ambushStaleAt=Math.min(c.ambushStaleAt,clock.t+rand(15,45))} // the prey here are alarmed now
+      if(c.limbSite&&s.y<1){c.logSite(limbPt(c.limbSite.limb,c.limbSite.u??1,c.rm),'limb',true);c.limbStaleAt=clock.t}},
+    update(c){const s=c.snake;if(this.back&&dist(s.head,this.back)>1.3&&this.t<9){s.steerTo(this.back,0.32);s.submerge=this.t>1.2;return C}
+      s.halt();s.submerge=!!this.back&&s.inWater();return this.t>=this.dur?S:C},
+    stop(c){c.snake.lookAt=null}}),
+  giveUp:mkOp('GiveUpHunt',{start(c){const n=c.staleCount,tod=c.getState(WS.TimeOfDay);
+      if(tod===2){c.fastUntil=clock.t+Math.max(0.03,rand(0.71,0.78)-clock.day)*clock.dayLen;c.ev(`Waited in vain; lies up until dusk`)}
+      else{c.fastUntil=clock.t+clock.dayLen*rand(0.3,0.85)*(c.getState(WS.Hunger)===3?0.4:1)*(tod===0?0.6:1);c.ev(`Gives up hunting for now after ${n} fruitless waits; rests (~${((c.fastUntil-clock.t)/HOUR).toFixed(0)} h)`)}
+      c.staleCount=0;c.huntFails=(c.huntFails||0)+1},update:()=>S}),
+  // tree anaconda changing tactics: after fruitless nights on the limbs it lies in wait on the ground by the trail or the pool edge
+  tryGround:mkOp('TryTheGround',{start(c){c.groundUntil=clock.t+Math.max(0.05,(clock.day<0.5?0.22:1.22)-clock.day)*clock.dayLen;c.staleCount=0;c.ev('No luck from the limbs: tries the ground by the trail tonight')},update:()=>S}),
+  chooseGroundSite:mkOp('ChooseGroundSite',{start(c){const s=c.snake;let best=null;
+      const cands=[];for(let k=0;k<10;k++){const f=rand(0,1),q=add(TRAIL[0],mul(sub(TRAIL[1],TRAIL[0]),f));if(dist(q,GROVE_C)<34){const n=norm({x:-(TRAIL[1].z-TRAIL[0].z),z:TRAIL[1].x-TRAIL[0].x});cands.push(add(q,mul(n,(Math.random()<0.5?-1:1)*rand(1.5,3))))}}
+      const o=nearestPond(GROVE_C);for(let k=0;k<6;k++){const q=edgePoint(o,add(o,hdir(headingOf(sub(GROVE_C,o))+rand(-0.7,0.7))),-rand(1.5,3));if(dist(q,GROVE_C)<34)cands.push(q)}
+      for(const q of cands){const sc=c.preyNear(q,6)*0.6+(inGrass(q)?0.8:0)+(TREES.some(t=>dist(t,q)<5)?0.5:0)-dist(q,s.head)/25-2.5*c.recency(q,3,4)-2*c.fearOf(q)-(c.rivalNearPoint(q,25)?6:0)+rand(0,0.8);if(!best||sc>best.sc)best={q,sc}}
+      c.groundSite=best?best.q:{...s.head};c.groundStaleAt=Infinity;c.logSite(c.groundSite,'ground')},update:()=>S}),
+  goToGroundSite:moveOp('GoToGroundSite',c=>c.groundSite,0.35,{arrive:1.6,pres:'Moving'}),
+  groundAmbush:coilRestOp('CoilByTrail',{r0:2,r1:1.1,turns:1,pres:'Ambush',breakOn:c=>c.ws[WS.StrikeWindow]===1||c.ws[WS.Carrying]===1,
+    onStart(c){c.groundStaleAt=clock.t+c.p.patience*rand(0.7,1.3)},minDwell:c=>c.p.patience*0.25,maxTime:c=>c.p.patience*1.4,
+    onIdle(c){const b=c.target;c.snake.lookAt=b&&b.confidence>0.3?b.lastKnown:null},
+    done:c=>clock.t>c.groundStaleAt,onStop:(c,how)=>{c.snake.lookAt=null;if(how==='success'&&clock.t>c.groundStaleAt)c.waitedInVain(c.groundSite)}}),
+  // night foraging: a slow, tongue-led prowl through the shallows along the shore (or toward the pool it remembers as busiest)
+  chooseForageLeg:mkOp('ChooseForageLeg',{start(c){const s=c.snake,o=nearestPond(s.head),now=clock.t;c.lastProwlAt=now;
+      let tgt=null,best=-1e9;for(const q of PONDS){if(dist(q,c.home)>c.homeRange())continue;const tr=c.traffic(q),d=dist(q,s.head)-q.r;if(q!==o&&d>55)continue;
+        const sc=tr-d/30+(q===o?0.4:0)+rand(0,0.6);if(sc>best){best=sc;tgt=q}}
+      if(!tgt)tgt=o; // far from every pool in its range: head for the nearest
+      if(tgt===o){const a=headingOf(sub(s.head,o))+(Math.random()<0.5?1:-1)*rand(0.9,2)*14/o.r;c.travelGoal=add(o,mul(hdir(a),o.r-rand(1.5,3)))}
+      else c.travelGoal=edgePoint(tgt,s.head,2.5);c.travelPond=tgt},update:()=>S}),
+  prowl:moveOp('Prowl',c=>c.travelGoal,0.3,{tongue:true,pres:'Prowling',arrive:2.2,path:(c,p)=>c.travelPond&&pondAt(c.snake.head,0.5)===c.travelPond?shoreArc(c.travelPond,c.snake.head,p,2.2):null}),
   // kills are dragged well into the pool (≥ coil radius + 1 m inside the edge) so the coils stay wet and the prey drowns
-  drag:moveOp('Drag',c=>{const o=nearestPond(c.snake.head);return edgePoint(o,c.snake.head,c.p.avoidWater?0.9:Math.min(o.r*0.45,DRAG_DEPTH))},0.8,{arrive:1.2,pres:'Drag',onStop:(c,how)=>{if(how==='failure')c.dragAttempts++}}),
-  constrict:coilRestOp('NestCoil',{r0:2.6,r1:1.2,turns:1.6,mul:0.6,hold:c=>c.p.arboreal?30:2,maxTime:c=>c.p.arboreal?50:30,minDwell:40,pres:c=>c.snake.inWater()?'Drowning':'Constrict',
-    onStart(c){const o=pondAt(c.snake.head,-0.5);if(o&&c.carried)c.ev(`Holding ${c.carried.name} under in ${o.name}`)},onStop(c,how){if(how==='success'&&c.carried)c.carried.limp=true}}),
-  swallow:mkOp('Swallow',{minDwell:10,
-    start(c){c.snake.halt();c.snake.mouthTarget=1;c.snake.pres='Swallow';this.dur=c.p.swallowS||4}, // a smaller snake takes much longer over a big meal
-    update(c){c.snake.halt();if(this.t>this.dur-1)c.snake.mouthTarget=0;if(this.t<this.dur)return C;
+  drag:moveOp('Drag',c=>{const o=nearestPond(c.snake.head);return edgePoint(o,c.snake.head,c.p.avoidWater?0.9:Math.min(o.r*0.45,DRAG_DEPTH))},0.8,{arrive:1.2,pres:'Drag',route:false,pause:false,wander:false,onStop:(c,how)=>{if(how==='failure')c.dragAttempts++}}),
+  // constriction lasts until the prey stops struggling: its strength (body mass, an individual), how well it is wrapped, the snake's
+  // size, and drowning in water set the pace; struggles can flare up again. A short hold after it goes limp.
+  constrict:coilRestOp('NestCoil',{r0:2.6,r1:1.2,turns:1.6,mul:0.6,keep:false,minDwell:5,maxTime:150,pres:c=>c.snake.inWater()?'Drowning':'Constrict',
+    onStart(c,op){const p=c.carried,o=pondAt(c.snake.head,-0.5);if(p&&!p.limp&&p.struggle==null)p.struggle=(p.kind==='snake'?1.5:p.kind==='human'?1.1:1)*(p.mass||1)*rand(0.85,1.2);
+      op.holdAfter=rand(1.5,5);op.limpT=0;if(o&&p)c.ev(`Holding ${p.name} under in ${o.name}`)},
+    onTick(c,op,dt){const p=c.carried;if(!p)return;if(p.limp){op.limpT+=dt;return}
+      const wrapped=op.coil&&(op.coil.done||op.coil.acc>TAU*0.6),k=0.06*Math.sqrt(c.p.size)*(wrapped?1:0.35)*(c.snake.inWater()?1.6:1)/(p.mass||1);
+      if(Math.random()<dt*0.06*p.struggle)p.struggle+=rand(0.05,0.15); // a renewed struggle
+      p.struggle-=k*dt*rand(0.6,1.4);
+      if(p.struggle<=0){p.struggle=0;p.limp=true;c.ev(`${p.name} has stopped struggling (${op.t.toFixed(0)} s in the coils)`)}},
+    done:(c,op)=>!c.carried||(c.carried.limp&&op.limpT>=op.holdAfter),
+    onStop(c,how){if(how==='success'&&c.carried){c.carried.limp=true;c.carried.struggle=0}}}),
+  // swallowing takes far longer than the kill: bouts of jaw-walking (the jaws ratchet forward over the prey) with pauses between them;
+  // the work scales with the prey's girth against the snake's head; it can still be cut short by a threat (Survive: regurgitate)
+  swallow:mkOp('Swallow',{minDwell:8,
+    start(c){const s=c.snake,p=c.carried;s.halt();s.mouthTarget=1;s.pres='Swallow';const g=p?(p.mass||1)*(p.kind==='snake'?1.3:p.kind==='human'?1.1:1):1;
+      if(p&&!p.swallowDur)p.swallowDur=(c.p.swallowK||60)*g/Math.pow(c.p.size,0.8)*rand(0.85,1.15); // the half-swallowed prey keeps its progress across replans
+      this.dur=p?p.swallowDur:30;this.prog=p&&p.swallowed||0;this.bout=rand(2,4);this.rest=0;this.jt=0},
+    update(c,dt){const s=c.snake;s.halt();
+      if(this.prog<1){if(this.bout>0){this.bout-=dt;this.jt+=dt;this.prog=Math.min(1,this.prog+dt/this.dur);if(c.carried)c.carried.swallowed=this.prog;s.mouthTarget=0.82+0.18*Math.sin(this.jt*4.2);if(this.bout<=0)this.rest=rand(1.2,4)*(0.6+this.prog)}
+        else if(this.rest>0){this.rest-=dt;s.mouthTarget=0.9;if(this.rest<=0)this.bout=rand(2.5,6)}
+        return C}
+      if(!this.closeT)this.closeT=this.t;s.mouthTarget=0;if(this.t-this.closeT<1)return C;
       const p=c.carried;if(p){p.state='eaten';p.respawnAt=clock.t+c.world.replenish(p);c.lastMeal=p;if(p.kind==='snake')c.world.snakeEaten(p.brain);
-        c.mealLen=MEAL_DAYS[p.kind]*clock.dayLen/c.p.digestRate;c.ev(`Swallowed ${p.name}. Digestion begins (~${(c.mealLen/clock.dayLen).toFixed(0)} days)`)}
-      c.carried=null;c.drives.hunger=0;c.drives.digestion=1;c.strikes=0;c.dragAttempts=0;c.ambushPoint=null;return S},
+        c.mealLen=MEAL_DAYS[p.kind]*(p.mass||1)*clock.dayLen/c.p.digestRate;c.ev(`Swallowed ${p.name} after ${this.t.toFixed(0)} s. Digestion begins (~${(c.mealLen/clock.dayLen).toFixed(0)} days)`)}
+      if(p)c.drives.condition=Math.min(1,c.drives.condition+0.32*(p.mass||1)*(p.kind==='human'?1.2:p.kind==='snake'?1.1:1));
+      c.carried=null;c.drives.hunger=0;c.drives.digestion=1;c.strikes=0;c.dragAttempts=0;c.ambushPoint=null;c.staleCount=0;c.fastUntil=0;return S},
     stop(c){c.snake.mouthTarget=c.carried?0.55:0}
   }),
   regurgitate:mkOp('Regurgitate',{
@@ -930,41 +1140,60 @@ const Ops={
     update(c){return this.t>=2?S:C},
     stop(c){c.snake.mouthTarget=0}
   }),
-  withdraw:moveOp('WithdrawToWater',c=>edgePoint(c.homePond,c.snake.head,6),0.8,{pres:'Withdraw'}),
+  withdraw:moveOp('WithdrawToWater',c=>edgePoint(nearestPond(c.snake.head),c.snake.head,6),0.8,{pres:'Withdraw',pause:false,route:false}),
   ballUp:coilRestOp('BallUp',{tight:true,r0:1.6,r1:0.7,turns:3,mul:0.5,hold:7,pres:'Balled'}),
   targetThreat:mkOp('TargetThreat',{start(c){c.forcedTarget=c.world.nearestHuman(c.snake.head)},update:()=>S}),
-  flee:moveOp('Flee',c=>{const th=c.threatPoint||c.snake.head;const o=PONDS.reduce((b,o)=>(dist(o,c.snake.head)-0.5*dist(o,th))<(dist(b,c.snake.head)-0.5*dist(b,th))?o:b);return edgePoint(o,add(o,sub(o,th)),6)},0.8,{pres:'Flee'}),
+  flee:moveOp('Flee',c=>{const th=c.threatPoint||c.snake.head;const o=PONDS.reduce((b,o)=>(dist(o,c.snake.head)-0.5*dist(o,th))<(dist(b,c.snake.head)-0.5*dist(b,th))?o:b);return edgePoint(o,add(o,sub(o,th)),6)},0.8,{pres:'Flee',pause:false,wander:false}),
   hideSubmerged:coilRestOp('HideSubmerged',{r0:2,r1:1.1,turns:1,submerge:true,wet:true,pres:'Submerged'}),
   goToWater:moveOp('GoToWater',c=>edgePoint(nearestPond(c.snake.head),c.snake.head,3),0.3,{arrive:1.5}),
-  goToBask:moveOp('GoToBaskPoint',c=>nearestPond(c.snake.head).bask,0.35,{arrive:2}),
-  bask:coilRestOp('Bask',{dry:true,r0:2.4,r1:1.2,turns:1.5,pres:'Basking',minDwell:10}),
-  restInWater:coilRestOp('RestInWater',{r0:2.2,r1:1.2,turns:1,submerge:true,wet:true,pres:'Resting',minDwell:15}),
+  // rest sites are chosen (ChooseRestSite) among many candidate spots by sun, cover, distance, disturbance memory and recent use
+  chooseBaskSite:mkOp('ChooseBaskSite',{start(c){c.chooseRestSite('bask')},update:()=>S}),
+  chooseShallows:mkOp('ChooseShallows',{start(c){c.chooseRestSite('float')},update:()=>S}),
+  chooseReedSite:mkOp('ChooseReedSite',{start(c){c.chooseRestSite('reeds')},update:()=>S}),
+  chooseDeepSite:mkOp('ChooseDeepSite',{start(c){c.chooseRestSite('deep')},update:()=>S}),
+  chooseNightSite:mkOp('ChooseRestSite',{start(c){c.chooseRestSite('night')},update:()=>S}),
+  goToRestSite:moveOp('GoToRestSite',c=>c.restSite&&c.restSite.p,0.35,{arrive:1.8,pres:'Moving',path:(c,p)=>{const rs=c.restSite;if(!rs||pondAt(c.snake.head,1.5)!==rs.o)return null;
+      const w=shoreArc(rs.o,c.snake.head,p,Math.max(2,rs.o.r-dist(p,rs.o)));if(rs.k==='bask'||rs.k==='reeds')w[w.length-1]=edgePoint(rs.o,p,1.5),w.push({...p});return w}}),
+  // basking and floating anacondas lie in loose loops rather than tight spirals
+  bask:coilRestOp('Bask',{dry:true,r0:2.6,r1:1.6,turns:0.75,mul:0.55,pres:'Basking',minDwell:10}),
+  floatShallows:coilRestOp('FloatInShallows',{r0:2.6,r1:1.6,turns:0.7,mul:0.55,wet:'rest',pres:'Floating',minDwell:10}), // in the shallows, back at the surface in the sun
+  lieInReeds:coilRestOp('LieInReeds',{dry:true,r0:2.3,r1:1.3,turns:0.9,mul:0.55,pres:'Resting in reeds',minDwell:10}),
+  restDeep:coilRestOp('RestDeep',{r0:2.2,r1:1.2,turns:1,submerge:true,wet:'rest',pres:'Resting',minDwell:15}),
+  warmInWater:coilRestOp('WarmInWater',{r0:2.2,r1:1.2,turns:1,submerge:true,wet:'rest',pres:'Resting',minDwell:15}),
+  restInWater:coilRestOp('RestInWater',{r0:2.2,r1:1.2,turns:1,submerge:true,wet:'rest',pres:'Resting',minDwell:15}),
   submergeToCool:coilRestOp('SubmergeToCool',{r0:2.2,r1:1.2,turns:1,submerge:true,wet:true,pres:'Cooling',minDwell:10}),
   goToShade:moveOp('GoToShade',c=>{const t=nearestTree(c.snake.head);return add(t,mul(norm(sub(c.snake.head,t)),2.2))},0.4,{arrive:1.5}),
   restInShade:coilRestOp('RestInShade',{r0:2,r1:1.2,turns:1,pres:'Shade'}),
   goHome:moveOp('GoHome',c=>c.p.arboreal?add(nearestGrove(c.snake.head),mul(norm(sub(c.snake.head,nearestGrove(c.snake.head))),4)):edgePoint(c.homePond,c.snake.head,-3),0.4,{tongue:true}),
-  chooseShorePoint:mkOp('ChooseShorePoint',{start(c){const near=PONDS.filter(o=>dist(o,c.home)<c.homeRange());const o=pick(near);const a=Math.random()*TAU;c.travelGoal={x:o.x+Math.cos(a)*(o.r-1),z:o.z+Math.sin(a)*(o.r-1)}},update:()=>S}),
-  travelShore:moveOp('TravelShore',c=>c.travelGoal,0.4,{tongue:true,pres:'Patrol'}),
+  chooseShorePoint:mkOp('ChooseShorePoint',{start(c){const s=c.snake;let best=null;for(const o of PONDS){if(dist(o,c.home)>c.homeRange())continue;const a=Math.random()*TAU,p={x:o.x+Math.cos(a)*(o.r-1),z:o.z+Math.sin(a)*(o.r-1)};
+      const sc=c.traffic(o)-dist(p,s.head)/40-1.5*c.recency(p,8)+rand(0,0.8);if(!best||sc>best.sc)best={p,o,sc}}
+      if(!best){const o=nearestPond(s.head);best={p:edgePoint(o,s.head,1),o}}c.travelGoal=best.p;c.travelPond=best.o;c.logSite(best.p,'patrol')},update:()=>S}),
+  travelShore:moveOp('TravelShore',c=>c.travelGoal,0.4,{tongue:true,pres:'Patrol',path:(c,p)=>c.travelPond&&pondAt(c.snake.head,0.5)===c.travelPond?shoreArc(c.travelPond,c.snake.head,p,2.2):null}),
   goToCover:moveOp('GoToCover',c=>nearestGrass(c.snake.head),0.4,{arrive:3}),
   restInCover:coilRestOp('RestInCover',{r0:2.2,r1:1.2,turns:1.25,pres:'Resting',minDwell:5}),
   restAtTree:coilRestOp('RestAtTreeBase',{r0:2,r1:1.1,turns:1,pres:'Resting'}),
-  rushToPoint:moveOp('RushToPoint',c=>c.order&&c.order.point,0.8,{pres:'Director rush',arrive:3}),
+  // disturbance, graded (Survive > Vigilance): slip off the bank into the water, sink low, or freeze, then linger until calm again
+  slipIntoWater:moveOp('SlipIntoWater',c=>edgePoint(nearestPond(c.snake.head),c.snake.head,3.5),0.6,{pres:'Slips into water',arrive:1.5,route:false,pause:false,wander:false}),
+  sinkDeeper:holdStillOp('SinkDeeper','Sinks low',true),
+  freezeLow:holdStillOp('FreezeInCover','Still',false),
+  freezeUp:holdStillOp('FreezeOnLimb','Frozen',false),
+  rushToPoint:moveOp('RushToPoint',c=>c.order&&c.order.point,0.8,{pres:'Director rush',arrive:3,route:false,pause:false}),
   campPoint:coilRestOp('CampPoint',{r0:2.5,r1:1.3,turns:1.25,pres:'Camping',onStop:(c,how)=>{if(how!=='success')c.brain.clearDirector('handed over')}}),
   // ---- arboreal (tree anaconda) ----
   chooseLimb:mkOp('ChooseAmbushLimb',{start(c){c.chooseLimbSite()},update:()=>S}),
   climbTrunk:arbOp('ClimbTrunk',c=>{const t=c.entryTree();const l=t.limbs.find(q=>q.kind==='bridge'&&c.limbSite&&groveHops(t,c.limbSite.tree)[1]===q.to)||t.limbs.find(q=>q.kind==='bridge')||t.limbs[0];return {tree:t,limb:l,u:limbU0(l,c.rm)+0.12}},{pres:'Climbing',hold:0}),
   traverseCanopy:arbOp('TraverseCanopy',c=>c.limbSite&&{tree:c.limbSite.tree,limb:c.limbSite.limb,u:1},{pres:'Canopy travel',hold:0}),
   lieOnLimb:arbOp('LieOnLimb',c=>c.limbSite,{pres:'Moving',restPres:'Limb ambush',
-    onArrive(c){if(c.limbSettledAt==null){c.limbSettledAt=clock.t;c.limbStaleAt=clock.t+c.p.patience;c.ev(`Lies along a limb of ${c.limbSite.tree.name}, head hanging over the ground`)}},
-    minDwell:c=>c.p.patience*0.25,maxTime:c=>c.limbStaleAt===Infinity?c.p.patience+30:Math.max(8,c.limbStaleAt-clock.t+20),
+    onArrive(c){if(c.limbSettledAt==null){const tod=c.getState(WS.TimeOfDay);c.limbSettledAt=clock.t;c.limbStaleAt=clock.t+c.p.patience*rand(0.7,1.4)*(tod===2?1.5:tod===0?0.7:1);c.ev(`Lies along a limb of ${c.limbSite.tree.name}, head hanging over the ground`)}},
+    minDwell:c=>c.p.patience*0.25,maxTime:c=>c.limbStaleAt===Infinity?c.p.patience*2.2+30:Math.max(8,c.limbStaleAt-clock.t+20),
     breakOn:c=>c.ws[WS.StrikeWindow]===1||c.ws[WS.Carrying]===1,
     onRest(c,op){if(op.arrivedAt!=null&&clock.t>c.limbStaleAt)op.max=op.t},
-    onStop:(c,how)=>{if(how==='success')c.limbStaleAt=clock.t}}),
+    onStop:(c,how)=>{if(how==='success'){c.limbStaleAt=clock.t;if(c.limbSite)c.waitedInVain(limbPt(c.limbSite.limb,c.limbSite.u??1,c.rm));if(c.getState(WS.Hunger)===3)c.forageUntil=clock.t+c.p.patience}}}),
   freeze:mkOp('FreezeInCanopy',{minDwell:6,start(c){c.snake.halt();c.snake.pres=c.snake.inTree()?'Frozen':'Still';c.snake.tongue=false;c.ev(c.rivalFeared()&&c.ws[WS.RivalNear]>=2?`Freezes in ${c.snake.inTree()?'the canopy':'place'}: the ${c.rival().p.label.toLowerCase()} is ${c.rivalDist().toFixed(0)} m away`:'Freezes, motionless')},
     update(c){c.snake.halt();return this.t>45?S:C}}),
   climbToSafety:arbOp('ClimbToSafety',c=>{const t=c.refugeTree();if(!t)return null;const l=t.limbs.find(q=>q.kind==='high')||t.limbs[0];return {tree:t,limb:l,u:0.75}},{pres:'Climbing away',speed:c=>BASE_SPEED*0.4,hold:0,
     onStart(c){c.ev(c.rivalFeared()&&c.ws[WS.RivalNear]>=2?`Climbs ${c.refugeTree().name} to get away from the ${c.rival().p.label.toLowerCase()}`:`Climbs ${c.refugeTree().name} to escape`)}}),
-  fleeOverland:moveOp('FleeOverland',c=>{const th=c.threatFrom();return clampIsland(add(c.snake.head,mul(norm(sub(c.snake.head,th)),30)),10)},0.7,{pres:'Flee'}),
+  fleeOverland:moveOp('FleeOverland',c=>{const th=c.threatFrom();return clampIsland(add(c.snake.head,mul(norm(sub(c.snake.head,th)),30)),10)},0.7,{pres:'Flee',pause:false,route:false}),
   abandonKill:mkOp('AbandonKill',{start(c){c.snake.halt();c.snake.mouthTarget=1;c.snake.pres='Abandon kill';const r=c.rival();c.dropKill(r?`as the ${r.p.label.toLowerCase()} closes in`:'')},update(c){return this.t>=1?S:C},stop(c){c.snake.mouthTarget=0}}),
   goToCarcass:mkOp('GoToCarcass',{start(c){c.snake.pres='Scavenging';c.snake.tongue=true;c.snake.submerge=false},
     update(c){const p=c.carcass;if(!p||p.state!=='carcass')return F;const m=c.snake.mouthPos();if(dist(m,p.pos)<1.6)return S;c.moveGoal=p.pos;c.snake.steerTo(p.pos,0.45*sl(c));return this.t>90?F:C},
@@ -981,13 +1210,18 @@ const Ops={
       if(seg.slice(0,12).some(q=>dist(q,m)<1.6)&&r.body.y<0.5){if(Math.random()<0.5){c.seizeRival(r);return S}r.drives.stress=1;r.ctx.threatPoint={...c.snake.head};c.ev(`Bit the ${r.p.label.toLowerCase()}, which tore free`);return F}
       return this.t>=0.9?F:C},
     stop(c,how){c.lunging=false;c.snake.halt();c.snake.mouthTarget=c.carried?0.55:0;if(how==='failure'&&this.r&&!this.r.dead)c.ev(`Strike at the ${this.r.p.label.toLowerCase()} missed`)}}),
-  restInCanopy:arbOp('RestInCanopy',c=>c.restPerch('shade'),{pres:'Moving',restPres:'Resting in crown',minDwell:20,maxTime:150}),
-  baskOnLimb:arbOp('BaskOnLimb',c=>c.restPerch('sun'),{pres:'Climbing',restPres:'Basking',minDwell:15,maxTime:120}),
-  shadeInCrown:arbOp('ShadeInCrown',c=>c.restPerch('shade'),{pres:'Moving',restPres:'Shade',minDwell:15,maxTime:120}),
-  digestInTree:arbOp('DigestInTree',c=>c.restPerch(c.getState(WS.TimeOfDay)===2&&sunElev(clock.day)>0.8||c.getState(WS.Thermal)===2?'shade':'sun'),{pres:'Climbing',restPres:'Digesting',minDwell:30,maxTime:200}),
+  restInCanopy:arbOp('RestInCanopy',c=>c.choosePerch(c.prefKind()),{pres:'Moving',restPres:'Resting in crown',minDwell:20,maxTime:c=>rand(120,260)}),
+  baskOnLimb:arbOp('BaskOnLimb',c=>c.choosePerch('sun'),{pres:'Climbing',restPres:'Basking',minDwell:15,maxTime:c=>rand(90,200)}),
+  shadeInCrown:arbOp('ShadeInCrown',c=>c.choosePerch('cool'),{pres:'Moving',restPres:'Shade',minDwell:15,maxTime:c=>rand(90,220)}),
+  // digesting up a tree: where on which limb follows the rest preference (sunny high limb / along a limb in dappled light / tucked in a fork / crown shade)
+  digestSunLimb:arbOp('BaskOnLimb',c=>c.choosePerch('sun'),{pres:'Climbing',restPres:'Basking',minDwell:20,maxTime:c=>rand(120,260)}),
+  digestAlongLimb:arbOp('LieAlongLimb',c=>c.choosePerch('dappled'),{pres:'Climbing',restPres:'Digesting',minDwell:20,maxTime:c=>rand(150,300)}),
+  digestFork:arbOp('RestInFork',c=>c.choosePerch('cover'),{pres:'Climbing',restPres:'Digesting',minDwell:20,maxTime:c=>rand(150,320)}),
+  digestShade:arbOp('ShadeInCrown',c=>c.choosePerch('cool'),{pres:'Climbing',restPres:'Shade',minDwell:20,maxTime:c=>rand(150,300)}),
   chooseCrown:mkOp('ChooseCrown',{start(c){const cur=c.snake.y>0.3?(locatePerch(c.snake,c.rm)||{}).tree:nearestGrove(c.snake.head);
-      const opts=GROVE.filter(t=>t!==cur&&!c.rivalNearPoint(t,22));const t=opts.length?pick(opts):nearestGrove(c.snake.head);const l=pick(t.limbs.filter(q=>q.kind!=='low'));c.travelPerch={tree:t,limb:l,u:rand(0.5,0.9)};c.moveGoal=t},update:()=>S}),
-  travelCanopy:arbOp('TravelCanopy',c=>c.travelPerch,{pres:'Canopy travel',restPres:'Resting',hold:c=>rand(8,20)}),
+      let best=null;for(const t of GROVE){if(t===cur||c.rivalNearPoint(t,22))continue;const sc=-dist(t,c.snake.head)/20-1.5*c.recency(t,6,1.5)+c.preyNear(t,10)*0.4+rand(0,1);if(!best||sc>best.sc)best={t,sc}}
+      const t=best?best.t:nearestGrove(c.snake.head);c.logSite(t,'crown');const ls=t.limbs.filter(q=>q.kind!=='low');const l=pick(ls.length?ls:t.limbs);c.travelPerch={tree:t,limb:l,u:rand(0.45,0.9)};c.moveGoal=t},update:()=>S}),
+  travelCanopy:arbOp('TravelCanopy',c=>c.travelPerch,{pres:'Canopy travel',restPres:'Resting',hold:c=>rand(6,40)}),
   goToTreeBase:moveOp('GoToTreeBase',c=>{const t=c.refugeTree()||nearestGrove(c.snake.head);return add(t,mul(norm(sub(c.snake.head,t)),4.3))},0.35,{arrive:2}),
 };
 function arbOp(name,getTarget,o={}){return mkOp(name,{
@@ -1007,7 +1241,9 @@ function arbOp(name,getTarget,o={}){return mkOp(name,{
         s.setRoute(toRoute(pts.concat(arbRoute({tree:t,limb:null,a:this.a0,cy:0.72*c.rm},this.tg,c.rm)),c.rm),this.spd);this.phase='route';c.moveGoal=null;
         if(!c.lastClimbEv||clock.t-c.lastClimbEv>20){c.lastClimbEv=clock.t;c.ev(`Climbs the trunk of ${t.name}`)}return C}
       if(this.t-this.lastT>10){if(dist(this.last,s.head)<1)return F;this.last={...s.head};this.lastT=this.t}
-      if(this.t>120)return F;s.steerTo(this.base,0.4*sl(c));return C}
+      if(this.t>120)return F;if(openPause(this,c,dt))return C;
+      this.wob=clamp((this.wob||0)-(this.wob||0)*dt/3+gauss()*0.4*Math.sqrt(dt),-0.6,0.6);const dg=dist(s.head,this.base);
+      s.steerTo(dg>4?add(s.head,mul(hdir(headingOf(sub(this.base,s.head))+this.wob),Math.min(5,dg))):this.base,0.4*sl(c));return C}
     if(this.phase==='route'){if(s.routeDone){this.arrive(c)}else{const q=s.route[Math.min(s.ri,s.route.length-1)];s.pres=q&&q.bridge?'Crossing to next crown':Math.abs(s.pitch)>0.25?(s.pitch>0?'Climbing':'Descending'):fnOr(o.pres,c)||'Canopy travel';return C}}
     s.halt();if(o.onRest)o.onRest(c,this);
     if(this.holdV!==undefined&&this.t-this.arrivedAt>=this.holdV)return S;
@@ -1035,7 +1271,9 @@ function buildDomain(){
     A('AlreadyInTree',{conds:[['in a tree',has(WS.InTree,1)]],op:Ops.succeed}),
     A('ClimbTrunk',{conds:[['on the ground',has(WS.InTree,0)]],exec:[notClose],op:Ops.climbTrunk,effects:[setWS('in tree',EffectType.PlanOnly,[[WS.InTree,1]])]}),
   ]);
-  const Survive=SEL('Survive',[['threatened, or a feared rival close',c=>c.getState(WS.Stress)===2||(c.rivalFeared()&&c.getState(WS.RivalNear)===3)]],[
+  const threatened=c=>c.getState(WS.Stress)===2||(c.rivalFeared()&&c.getState(WS.RivalNear)===3);
+  const Survive=SEL('Survive',[['wary of people, threatened, or a feared rival close',c=>threatened(c)||(c.getState(WS.Stress)===1&&c.stressSrc!=='rival'&&c.getState(WS.Carrying)===0)]],[
+   SEL('Escape',[['threatened, or a feared rival close',threatened]],[
     SEQ('AbandonKill',[fearful,['rival close',has(WS.RivalNear,3)],['carrying a kill',has(WS.Carrying,1)]],[
       A('AbandonKill',{op:Ops.abandonKill,effects:[setWS('kill dropped',EffectType.PlanAndExecute,[[WS.Carrying,0]])]}),
       SEL('Escape',[],[
@@ -1067,14 +1305,23 @@ function buildDomain(){
       A('Flee',{exec:[['still wary',ge(WS.Stress,1)]],op:Ops.flee}),
       A('HideSubmerged',{exec:[['still wary',ge(WS.Stress,1)]],op:Ops.hideSubmerged}),
     ],'REAL'),
+   ],'REAL/ADAPTED'),
+   // graded response to people who are disturbing it but not (yet) threatening: become less exposed in the cheapest way first,
+   // then stay put until calm. Each scare is remembered at that spot (the rest-site choice avoids it for days: sensitisation).
+   SEL('Vigilance',[['wary of people',c=>c.getState(WS.Stress)===1&&c.stressSrc!=='rival'],['not holding a kill',has(WS.Carrying,0)]],[
+    SEQ('SlipIntoWater',[NOTARB,['exposed on land by the water',c=>c.getState(WS.InTree)===0&&!c.snake.inWater()&&edgeDist(c.snake.head)<8]],[A('SlipIntoWater',{op:Ops.slipIntoWater}),A('SinkDeeper',{op:Ops.sinkDeeper})],'REAL'),
+    A('SinkDeeper',{conds:[NOTARB,['in water',c=>c.snake.inWater()]],op:Ops.sinkDeeper}),
+    A('FreezeOnLimb',{conds:[['in a tree',has(WS.InTree,1)]],op:Ops.freezeUp}),
+    A('FreezeInCover',{op:Ops.freezeLow}),
+   ],'REAL'),
   ],'REAL/ADAPTED');
 
   const EatKill=SEQ('EatKill',[['carrying',has(WS.Carrying,1)]],[
     SEL('ReachWater',[],[
-      A('AlreadyInWater',{conds:[['in open water',c=>edgeDist(c.snake.head)<-2.4]],op:Ops.succeed}),
-      A('DragToWater',{conds:[['drag attempts < 2',c=>c.dragAttempts<2],['water close (40 m; 12 m for a poor swimmer)',c=>edgeDist(c.snake.head)<(c.p.avoidWater?12:40)],['on the ground',has(WS.InTree,0)]],
+      A('AlreadyInWater',{conds:[['in open water, or already swallowing here',c=>edgeDist(c.snake.head)<-2.4||!!(c.carried&&c.carried.swallowed>0)]],op:Ops.succeed}),
+      A('DragToWater',{conds:[['drag attempts < 2',c=>c.dragAttempts<2],['water within reach (80 m; 12 m for a poor swimmer)',c=>edgeDist(c.snake.head)<(c.p.avoidWater?12:80)],['on the ground',has(WS.InTree,0)]],
         exec:[['still carrying',has(WS.Carrying,1)],['not threatened',lt(WS.Stress,2)]],op:Ops.drag,effects:[setWS('at water',EffectType.PlanOnly,[[WS.AtWater,1]])]}),
-      A('SwallowOnTheSpot',{conds:[['drag failed twice, or water too far',c=>c.dragAttempts>=2||edgeDist(c.snake.head)>=(c.p.avoidWater?12:40)||c.getState(WS.InTree)===1]],op:Ops.succeed}),
+      A('SwallowOnTheSpot',{conds:[['drag failed twice, or water too far',c=>c.dragAttempts>=2||edgeDist(c.snake.head)>=(c.p.avoidWater?12:80)||c.getState(WS.InTree)===1]],op:Ops.succeed}),
     ]),
     SEL('Kill',[],[
       A('AlreadyLimp',{conds:[['prey limp',c=>!!c.carried&&!!c.carried.limp]],op:Ops.succeed}),
@@ -1099,48 +1346,68 @@ function buildDomain(){
   // investigating inland) is a fallback for a bold snake or a starving one, and only in its active hours (dusk to dawn) unless it is bold by day.
   const active=['active hours',c=>c.getState(WS.TimeOfDay)!==2||c.p.boldByDay];
   const notAtSite=['not lying in ambush',c=>!c.atSite(c)];
-  // after an ambush runs out of patience a bold (or starving) snake forages actively for a while before settling again
-  const landHunter=c=>(c.p.boldness>=0.5||c.getState(WS.Hunger)===3)&&clock.t<c.forageUntil;
+  // after an ambush runs out of patience a bold (or starving) snake forages actively for a while before settling again,
+  // but on a water leash: not more than ~25 m from water unless starving
+  const landHunter=c=>(c.p.boldness>=0.5||c.getState(WS.Hunger)===3)&&clock.t<c.forageUntil&&(edgeDist(c.snake.head)<25||c.getState(WS.Hunger)===3);
   const nearWaterOrBold=['near water, or bold / starving',c=>(!c.p.arboreal&&c.targetNearWater(c))||landHunter(c)];
-  const Hunt=SEL('Hunt',[['hungry',ge(WS.Hunger,2)],['not heavy with a meal',lt(WS.Digesting,2)],['not in a breeding ball',ne(WS.Breeding,3)],['not exhausted',c=>c.drives.fatigue<0.85]],[
-    SEQ('StrikeNow',[['strike window',has(WS.StrikeWindow,1)],visible,['mine or free',ne(WS.Claim,2)],['strikes < 3',c=>c.strikes<3]],[
+  // a relocation in progress is only dropped for something felt or seen close by (no flapping between investigate and relocate)
+  const notRelocating=['not relocating, or the stimulus is close',c=>{const n=c.brain.planner.current&&c.brain.planner.current.name;return !/GoToSite|Prowl/.test(n||'')||(!!c.target&&c.getState(WS.BestContact)>=2&&dist(c.target.lastKnown,c.snake.head)<15)}];
+  // opportunism: a snake that is only peckish (and not digesting) still takes prey that walks into its strike window
+  const Hunt=SEL('Hunt',[['hungry, or peckish with prey in reach',c=>c.getState(WS.Hunger)>=2||(c.getState(WS.Hunger)===1&&c.getState(WS.StrikeWindow)===1&&c.getState(WS.Digesting)===0)],['not heavy with a meal',lt(WS.Digesting,2)],['not in a breeding ball',ne(WS.Breeding,3)],['not exhausted',c=>c.drives.fatigue<0.85],
+      ['keen (not fasting), or prey within reach',c=>c.getState(WS.HuntMood)===0||c.getState(WS.StrikeWindow)===1]],[
+    // no open-mouth display before a predatory strike: from water it bursts out, from a limb it drops, on land it only braces its neck
+    SEQ('StrikeNow',[['strike window',has(WS.StrikeWindow,1)],visible,['mine or free',ne(WS.Claim,2)],['strike allowed (no recent miss, or a close unwary follow-up)',c=>c.canStrike()]],[
       SEL('Ready',[],[
         A('BurstFromWater',{conds:[['submerged',c=>c.snake.submerge&&c.snake.inWater()]],op:Ops.succeed}),
         A('DropFromLimb',{conds:[['in a tree',has(WS.InTree,1)]],op:Ops.succeed,effects:[setWS('falls to the ground',EffectType.PlanOnly,[[WS.InTree,0]])]}),
-        A('Telegraph',{exec:[visible],op:Ops.telegraph}),
+        A('StrikeFromCover',{exec:[visible],op:Ops.brace}),
       ]),
       A('Lunge',{op:Ops.lunge,effects:[setWS('captured',EffectType.PlanAndExecute,[[WS.Carrying,1]])]}),
     ],'REAL'),
+    SEQ('MissRecovery',[['just missed',c=>!!c.missPending]],[A('RecoverFromMiss',{op:Ops.missRecover})],'REAL'),
     SEQ('StrikeRival',[['bigger than the rival',c=>c.rivalSmaller()],['starving',has(WS.Hunger,3)],['rival close',has(WS.RivalNear,3)],['rival on the ground, in reach',c=>c.rivalInReach()],['rare chance',c=>c.cannibalChance()]],[
       A('LungeAtRival',{op:Ops.lungeAtRival,effects:[setWS('captured',EffectType.PlanAndExecute,[[WS.Carrying,1]])]}),
     ],'REAL · rare'),
-    SEQ('Pursue',[['struck already',c=>c.strikes>=1&&c.strikes<3],visible,['within 15 m',c=>c.target&&dist(c.target.prey.pos,c.snake.head)<=15],['small, or quarry in the water',c=>c.pursuable(c)],safeDown],[
+    SEQ('Pursue',[['struck already',c=>c.strikes>=1],['may follow up (small male only)',c=>c.strikes<=c.followUps()],visible,['within 15 m',c=>c.target&&dist(c.target.prey.pos,c.snake.head)<=15],['small, or quarry in the water',c=>c.pursuable(c)],safeDown],[
       A('Pursue',{exec:[visible,['small, or quarry in the water',c=>c.pursuable(c)]],op:Ops.pursue}),PAUSE(),
     ],'ADAPTED'),
     SEQ('WaitInAmbush',[['prey coming to my water',c=>c.waitCond(c)]],[
       A('HoldAmbush',{exec:[['prey coming to my water',c=>c.waitCond(c)]],op:Ops.holdAmbush}),
     ],'REAL'),
-    SEQ('StalkSeen',[visible,active,notAtSite,nearWaterOrBold,safeDown],[
+    SEQ('StalkSeen',[visible,active,notAtSite,nearWaterOrBold,safeDown,notRelocating,['not given up on this one lately',c=>!c.target||clock.t-(c.target.stalkGiveUpAt||-1e9)>2*HOUR]],[
       SEL('Approach',[],[
         SEQ('Sneak',[['prey not facing me',c=>!c.targetFacesMe()]],[A('Sneak',{exec:[['contact ≥ vibration',ge(WS.BestContact,2)]],op:Ops.sneak})],'REAL'),
         SEQ('Creep',[],[A('Creep',{exec:[['contact ≥ vibration',ge(WS.BestContact,2)]],op:Ops.creep})],'REAL'),
       ]),
       PAUSE(),
     ],'REAL'),
-    SEQ('Investigate',[['felt, not seen',c=>c.getState(WS.BestContact)===2&&c.getState(WS.TargetVisible)===0],active,notAtSite,nearWaterOrBold,safeDown],[
+    SEQ('Investigate',[['felt, not seen',c=>c.getState(WS.BestContact)===2&&c.getState(WS.TargetVisible)===0],['not looked into just now',c=>!c.target||clock.t-(c.target.investigatedAt||-99)>30],active,notAtSite,nearWaterOrBold,safeDown,notRelocating],[
       A('GoToInterest',{exec:[['still believe',c=>!!c.target&&c.target.confidence>0.1]],op:Ops.goToInterest}),
       A('LookAround',{op:Ops.lookAround,effects:[eff('looked',EffectType.PlanAndExecute,c=>{if(!c.planning&&c.target)c.target.confidence*=0.5})]}),
     ],'REAL'),
-    SEQ('AmbushCutOff',[['trail',has(WS.HasTrail,1)],['contact ≥ scent',ge(WS.BestContact,1)],active,notAtSite,['bold or starving',landHunter],['no recent failed cut-off',c=>clock.t>(c.cutCooldownUntil||0)],safeDown],[
+    SEQ('AmbushCutOff',[['trail',has(WS.HasTrail,1)],['contact ≥ scent',ge(WS.BestContact,1)],active,notAtSite,['bold or starving, near water',landHunter],['no recent failed cut-off',c=>clock.t>(c.cutCooldownUntil||0)],safeDown],[
       A('CutAcross',{exec:[['trail',has(WS.HasTrail,1)]],op:Ops.cutAcross}),
       PAUSE(),
       A('HoldInPath',{exec:[['in path',has(WS.InPreyPath,1)],['patience',c=>c.brain.planner.elapsed()<c.p.patience]],op:Ops.holdInPath}),
     ],'ADAPTED'),
-    SEQ('FollowTrail',[['trail',has(WS.HasTrail,1)],['scent only',has(WS.BestContact,1)],active,notAtSite,['bold or starving',landHunter],safeDown],[
+    SEQ('FollowTrail',[['trail',has(WS.HasTrail,1)],['scent only',has(WS.BestContact,1)],active,notAtSite,
+        ['bold or starving near water; or the tree anaconda at night near its grove',c=>landHunter(c)||(c.p.arboreal&&c.getState(WS.TimeOfDay)===0&&dist(c.snake.head,GROVE_C)<28&&c.getState(WS.RivalNear)<2)],safeDown],[
       A('WalkTrail',{exec:[['trail',has(WS.HasTrail,1)],['under 60 s',c=>c.brain.planner.elapsed()<60]],op:Ops.followTrail}),
     ],'REAL'),
+    SEQ('ChangeTactics',[ARB,['several fruitless waits',c=>c.staleCount>=Math.min(3,c.giveUpAfter())],['dusk or night',c=>{const t=c.getState(WS.TimeOfDay);return t===0||t===3}],['hungry',ge(WS.Hunger,2)],['rival not near',lt(WS.RivalNear,2)],['not already on the ground tonight',c=>clock.t>c.groundUntil]],[
+      A('TryTheGround',{op:Ops.tryGround}),
+    ],'ADAPTED'),
+    // hunts fail: after several waits in vain the snake stops hunting for a while (hours to most of a day) and rests instead
+    SEQ('GiveUpAndRest',[['several fruitless waits',c=>c.staleCount>=c.giveUpAfter()],['nothing close',lt(WS.BestContact,2)]],[
+      A('GiveUpHunt',{op:Ops.giveUp,effects:[setWS('fasting',EffectType.PlanAndExecute,[[WS.HuntMood,1]])]}),
+    ],'REAL'),
+    SEQ('GroundAmbush',[ARB,['trying the ground tonight',c=>clock.t<c.groundUntil],['rival not near',lt(WS.RivalNear,2)],safeDown],[
+      A('ChooseGroundSite',{op:Ops.chooseGroundSite}),
+      A('GoToGroundSite',{exec:[notClose],op:Ops.goToGroundSite}),
+      A('CoilByTrail',{exec:[notClose,['not day',ne(WS.TimeOfDay,2)]],op:Ops.groundAmbush}),
+    ],'ADAPTED'),
     // tree anaconda: lie along a limb over a game trail / pool edge, head hanging, and drop on prey passing beneath
-    SEL('TreeAmbush',[ARB],[
+    SEL('TreeAmbush',[ARB,['dusk to dawn, or already on a fresh limb, or starving',c=>c.getState(WS.TimeOfDay)!==2||c.atSite(c)||c.getState(WS.Hunger)===3]],[
       A('LieOnLimb',{conds:[['settled at a fresh limb site',c=>c.atSite(c)],siteSafe],exec:[notClose,siteSafe],op:Ops.lieOnLimb}),
       SEQ('RelocateToLimb',[],[
         A('ChooseAmbushLimb',{op:Ops.chooseLimb}),
@@ -1149,6 +1416,11 @@ function buildDomain(){
         A('LieOnLimb',{exec:[notClose,siteSafe],op:Ops.lieOnLimb}),
       ]),
     ],'ADAPTED'),
+    // at night, after a wait in vain, a slow tongue-led prowl through the shallows before settling at a new spot
+    SEQ('ShorelineForage',[NOTARB,['night or dusk',c=>{const t=c.getState(WS.TimeOfDay);return t===0||t===3}],['restless after a fruitless wait',c=>c.lastStaleAt>c.lastProwlAt],notAtSite,['nothing felt',lt(WS.BestContact,2)]],[
+      A('ChooseForageLeg',{op:Ops.chooseForageLeg}),
+      A('Prowl',{exec:[['nothing felt',lt(WS.BestContact,2)]],op:Ops.prowl}),
+    ],'REAL'),
     SEL('AquaticLieInWait',[NOTARB],[
       A('Submerge',{conds:[['settled at a fresh site',c=>c.atSite(c)]],op:Ops.submerge}),
       SEQ('RelocateAmbush',[],[
@@ -1159,22 +1431,29 @@ function buildDomain(){
     ],'REAL'),
   ],'REAL');
 
-  // Digesting: bask on the bank (inside the water band) at dawn/day while not hot; otherwise lie in water. Tree anaconda: at a tree base, then up a tree.
-  const calm=['calm',lt(WS.Stress,2),1];
-  const Digest=SEL('Digest',[['digesting',ne(WS.Digesting,0)]],[
-    SEQ('DigestAtTreeBase',[ARB,['just fed, heavy',c=>c.drives.digestion>0.8],['on the ground',has(WS.InTree,0)]],[
-      A('GoToTreeBase',{exec:[calm],op:Ops.goToTreeBase}),A('RestAtTreeBase',{exec:[['heavy',c=>c.drives.digestion>0.8],calm],op:Ops.restAtTree}),
+  // Digesting: where and how it rests follows the RestPref byte (sun / dappled / cover / cool), which the quantiser derives from the
+  // weather and insolation, body heat, time left in the day, recent disturbance and how long it has rested that way. Each way of
+  // resting picks its own spot (ChooseRestSite) among many candidates. A light digester may move at night.
+  const calm=['calm',lt(WS.Stress,2),1],digesting=['digesting',ne(WS.Digesting,0)];
+  const RP=k=>[`rest preference: ${WS_LABELS.RestPref[k]}`,has(WS.RestPref,k)],stillRP=k=>[`still prefers ${WS_LABELS.RestPref[k]}`,has(WS.RestPref,k)];
+  const Digest=SEL('Digest',[digesting],[
+    SEQ('DigestAtTreeBase',[ARB,['just fed, heavy',c=>c.drives.digestion>0.9],['on the ground',has(WS.InTree,0)]],[
+      A('GoToTreeBase',{exec:[calm],op:Ops.goToTreeBase}),A('RestAtTreeBase',{exec:[['heavy',c=>c.drives.digestion>0.9],calm],op:Ops.restAtTree}),
     ],'ADAPTED'),
-    SEQ('DigestInTree',[ARB,safeDown],[getIntoCanopy(),A('DigestInTree',{exec:[['digesting',ne(WS.Digesting,0)],calm],op:Ops.digestInTree})],'REAL'),
-    SEQ('BaskWhileDigesting',[NOTARB,['dawn or day',c=>{const t=c.getState(WS.TimeOfDay);return t===1||t===2}],['not hot',ne(WS.Thermal,2)],['cool enough to gain from the sun',c=>c.drives.heat<0.66]],[
-      A('GoToBaskPoint',{op:Ops.goToBask}),
-      A('Bask',{exec:[['digesting',ne(WS.Digesting,0)],['not hot',ne(WS.Thermal,2)],calm,['not night',ne(WS.TimeOfDay,0)]],op:Ops.bask}),
+    SEQ('NightReposition',[['night',has(WS.TimeOfDay,0)],['light meal left',has(WS.Digesting,1)],['restless here (long at one spot, scared here, or getting peckish)',c=>c.restless()],safeDown],[
+      SEL('Reposition',[],[
+        SEQ('MoveCrowns',[ARB],[getIntoCanopy(),A('ChooseCrown',{op:Ops.chooseCrown}),A('TravelCanopy',{exec:[notClose],op:Ops.travelCanopy})]),
+        SEQ('MoveAlongShore',[NOTARB],[A('ChooseRestSite',{op:Ops.chooseNightSite}),A('GoToRestSite',{exec:[calm],op:Ops.goToRestSite})]),
+      ]),
     ],'REAL'),
-    SEQ('RestSubmerged',[NOTARB,['at water',has(WS.AtWater,1)]],[A('RestInWater',{exec:[['digesting',ne(WS.Digesting,0)],calm],op:Ops.restInWater})],'REAL'),
-    SEQ('SettleInWater',[NOTARB,['away from water',has(WS.AtWater,0)]],[
-      A('GoToWater',{exec:[['not threatened',lt(WS.Stress,2),1]],op:Ops.goToWater,effects:[setWS('at water',EffectType.PlanOnly,[[WS.AtWater,1]])]}),
-      A('RestInWater',{exec:[['digesting',ne(WS.Digesting,0)],calm],op:Ops.restInWater}),
-    ],'REAL'),
+    SEQ('DigestOnSunnyLimb',[ARB,RP(1),safeDown],[getIntoCanopy(),A('BaskOnLimb',{exec:[digesting,calm,stillRP(1)],op:Ops.digestSunLimb})],'REAL'),
+    SEQ('DigestAlongLimb',[ARB,RP(2),safeDown],[getIntoCanopy(),A('LieAlongLimb',{exec:[digesting,calm,stillRP(2)],op:Ops.digestAlongLimb})],'ADAPTED'),
+    SEQ('DigestInFork',[ARB,RP(3),safeDown],[getIntoCanopy(),A('RestInFork',{exec:[digesting,calm,stillRP(3)],op:Ops.digestFork})],'ADAPTED'),
+    SEQ('DigestInShade',[ARB,safeDown],[getIntoCanopy(),A('ShadeInCrown',{exec:[digesting,calm,['no other preference now',c=>c.getState(WS.RestPref)===4]],op:Ops.digestShade})],'ADAPTED'),
+    SEQ('BaskOnBank',[NOTARB,RP(1)],[A('ChooseBaskSite',{op:Ops.chooseBaskSite}),A('GoToBaskSite',{exec:[calm,stillRP(1)],op:Ops.goToRestSite}),A('Bask',{exec:[digesting,stillRP(1),calm],op:Ops.bask})],'REAL'),
+    SEQ('FloatInShallows',[NOTARB,RP(2)],[A('ChooseShallows',{op:Ops.chooseShallows}),A('GoToShallows',{exec:[calm,stillRP(2)],op:Ops.goToRestSite}),A('FloatInShallows',{exec:[digesting,stillRP(2),calm],op:Ops.floatShallows})],'REAL'),
+    SEQ('RestInReedsAtEdge',[NOTARB,RP(3)],[A('ChooseReedSite',{op:Ops.chooseReedSite}),A('GoToReeds',{exec:[calm,stillRP(3)],op:Ops.goToRestSite}),A('LieInReeds',{exec:[digesting,stillRP(3),calm],op:Ops.lieInReeds})],'REAL'),
+    SEQ('RestSubmergedDeep',[NOTARB],[A('ChooseDeepSite',{op:Ops.chooseDeepSite}),A('GoToDeepWater',{exec:[calm],op:Ops.goToRestSite}),A('RestDeep',{exec:[digesting,calm,['no other preference now',c=>c.getState(WS.RestPref)===4]],op:Ops.restDeep})],'REAL'),
   ],'REAL');
 
   const stub=n=>A(n,{op:Ops.idle});
@@ -1185,11 +1464,15 @@ function buildDomain(){
     SEQ('PostMating',[['post-mating',has(WS.Breeding,4)]],[stub('Disperse')]),
   ],'ADAPTED · not run');
 
-  const dawnDay=['dawn or day',c=>{const t=c.getState(WS.TimeOfDay);return t===1||t===2}];
+  // basking needs sun worth having (elevation, cloud) and enough of the day left; with no sun, the water is the warmest place
+  const sunny=['sun worth basking in',c=>sunElev(clock.day)>0.25&&c.world.weather.insol()>0.2&&clock.day<0.64];
   const Thermo=SEL('Thermoregulate',[['too cold or hot',ne(WS.Thermal,0)],['not starving',lt(WS.Hunger,3)]],[
-    SEQ('BaskOnLimb',[ARB,['cold',has(WS.Thermal,1)],dawnDay,safeDown],[getIntoCanopy(),A('BaskOnLimb',{exec:[['cold',has(WS.Thermal,1)]],op:Ops.baskOnLimb})],'REAL'),
-    SEQ('WarmUp',[NOTARB,['cold',has(WS.Thermal,1)],dawnDay],[
-      A('GoToBaskPoint',{op:Ops.goToBask}),A('Bask',{exec:[['cold',has(WS.Thermal,1)]],op:Ops.bask}),
+    SEQ('BaskOnLimb',[ARB,['cold',has(WS.Thermal,1)],sunny,safeDown],[getIntoCanopy(),A('BaskOnLimb',{exec:[['cold',has(WS.Thermal,1)]],op:Ops.baskOnLimb})],'REAL'),
+    SEQ('WarmUp',[NOTARB,['cold',has(WS.Thermal,1)],sunny],[
+      A('ChooseBaskSite',{op:Ops.chooseBaskSite}),A('GoToBaskSite',{op:Ops.goToRestSite}),A('Bask',{exec:[['below its preferred temperature',c=>c.drives.heat<0.62],['sun worth basking in',c=>c.world.weather.insol()>0.12]],op:Ops.bask}),
+    ],'REAL'),
+    SEQ('WarmInWater',[NOTARB,['cold',has(WS.Thermal,1)],['water warmer than the air',c=>c.world.weather.water()>c.world.weather.ambient()+0.03]],[
+      A('ChooseDeepSite',{op:Ops.chooseDeepSite}),A('GoToWater',{op:Ops.goToRestSite}),A('WarmInWater',{exec:[['cold',has(WS.Thermal,1)]],op:Ops.warmInWater}),
     ],'REAL'),
     SEQ('ShadeInCrown',[ARB,['hot',has(WS.Thermal,2)],safeDown],[getIntoCanopy(),A('ShadeInCrown',{exec:[['hot',has(WS.Thermal,2)]],op:Ops.shadeInCrown})],'ADAPTED'),
     SEL('CoolDown',[['hot',has(WS.Thermal,2)]],[
@@ -1198,28 +1481,29 @@ function buildDomain(){
     ],'REAL'),
   ],'REAL');
 
+  const dayC=['day',has(WS.TimeOfDay,2)];
   const Ambient=SEL('Ambient',[],[
-    SEQ('ReturnHome',[['outside home range',has(WS.InHomeRange,1)]],[A('GoHome',{op:Ops.goHome})],'REAL'),
+    SEQ('ReturnHome',[['outside home range',has(WS.InHomeRange,1)],['travels by night (or far out)',c=>c.getState(WS.TimeOfDay)!==2||dist(c.snake.head,c.home)>c.homeRange()*1.3]],[A('GoHome',{op:Ops.goHome})],'REAL'),
     SEQ('ClimbHome',[ARB,['on the ground',has(WS.InTree,0)],safeDown],[getIntoCanopy(),A('RestInCanopy',{op:Ops.restInCanopy})],'ADAPTED'),
     SEQ('CanopyTravel',[ARB,['in a tree',has(WS.InTree,1)],['not day',ne(WS.TimeOfDay,2)],['peckish',ge(WS.Hunger,1)]],[
       A('ChooseCrown',{op:Ops.chooseCrown}),A('TravelCanopy',{exec:[notClose],op:Ops.travelCanopy}),
     ],'INVENTED'),
-    SEQ('NightPatrol',[NOTARB,['night',has(WS.TimeOfDay,0)],['peckish',ge(WS.Hunger,1)]],[
+    SEQ('NightPatrol',[NOTARB,['night',has(WS.TimeOfDay,0)],['peckish',ge(WS.Hunger,1)],['keen (not fasting)',has(WS.HuntMood,0)]],[
       A('ChooseShorePoint',{op:Ops.chooseShorePoint}),
       A('TravelShore',{exec:[['night',has(WS.TimeOfDay,0)]],op:Ops.travelShore}),
     ],'REAL'),
-    SEL('DayLieUp',[['day',has(WS.TimeOfDay,2)]],[
-      A('RestInCanopy',{conds:[ARB],exec:[['day',has(WS.TimeOfDay,2)]],op:Ops.restInCanopy}),
-      A('RestSubmerged',{conds:[['at water',has(WS.AtWater,1)]],exec:[['day',has(WS.TimeOfDay,2)]],op:Ops.restInWater}),
-      SEQ('RestInCover',[],[A('GoToCover',{op:Ops.goToCover}),A('RestInCover',{exec:[['day',has(WS.TimeOfDay,2)]],op:Ops.restInCover})]),
+    SEL('DayLieUp',[dayC],[
+      A('RestInCanopy',{conds:[ARB],exec:[dayC],op:Ops.restInCanopy}),
+      SEQ('LieUpOnBank',[NOTARB,RP(1)],[A('ChooseBaskSite',{op:Ops.chooseBaskSite}),A('GoToBaskSite',{exec:[stillRP(1)],op:Ops.goToRestSite}),A('Bask',{exec:[dayC,stillRP(1)],op:Ops.bask})]),
+      SEQ('LieUpFloating',[NOTARB,RP(2)],[A('ChooseShallows',{op:Ops.chooseShallows}),A('GoToShallows',{exec:[stillRP(2)],op:Ops.goToRestSite}),A('FloatInShallows',{exec:[dayC,stillRP(2)],op:Ops.floatShallows})]),
+      SEQ('LieUpInReeds',[NOTARB,RP(3)],[A('ChooseReedSite',{op:Ops.chooseReedSite}),A('GoToReeds',{exec:[stillRP(3)],op:Ops.goToRestSite}),A('LieInReeds',{exec:[dayC,stillRP(3)],op:Ops.lieInReeds})]),
+      SEQ('RestSubmerged',[NOTARB,['water within 40 m',c=>edgeDist(c.snake.head)<40]],[A('ChooseDeepSite',{op:Ops.chooseDeepSite}),A('GoToWater',{op:Ops.goToRestSite}),A('RestSubmerged',{exec:[dayC,['no other preference now',c=>c.getState(WS.RestPref)===4]],op:Ops.restDeep})]),
+      SEQ('RestInCover',[],[A('GoToCover',{op:Ops.goToCover}),A('RestInCover',{exec:[dayC],op:Ops.restInCover})]),
       A('RestInTree',{conds:[['climber',c=>c.p.climber]],op:Ops.restAtTree}),
     ],'REAL'),
     SEQ('RefugeDuringShed',[['shedding',has(WS.Shedding,1)]],[stub('HideInRefuge')],'flavour · off'),
     SEQ('DrySeasonCluster',[['dry season',has(WS.Season,1)],['not hungry',lt(WS.Hunger,2)]],[stub('RestInCluster')],'REAL · no season here'),
-    SEL('LieInWater',[NOTARB],[
-      A('RestInWater',{conds:[['at water',has(WS.AtWater,1)]],op:Ops.restInWater}),
-      SEQ('GoAndLieInWater',[['water within 40 m',c=>edgeDist(c.snake.head)<40]],[A('GoToWater',{op:Ops.goToWater}),A('RestInWater',{op:Ops.restInWater})]),
-    ],'REAL'),
+    SEQ('LieInWater',[NOTARB,['water within 40 m',c=>edgeDist(c.snake.head)<40]],[A('ChooseDeepSite',{op:Ops.chooseDeepSite}),A('GoToWater',{op:Ops.goToRestSite}),A('RestInWater',{op:Ops.restInWater})],'REAL'),
     A('Idle',{op:Ops.idle}),
   ],'REAL');
 
@@ -1246,7 +1530,7 @@ const PERSONALITIES={
   male:{key:'male',label:'Small male',short:'Male',sex:'male',sizeClass:'small',segs:50,spacing:0.38,size:0.72,speedMul:1.2,patience:45,boldness:0.8,strikeRange:3.6,boldByDay:true,climber:true,hungerRate:1.4,digestRate:1.5,color:0x5e6a2c},
   // a smaller, lighter animal that lives in the canopy (Barrio-Amorós & Manrique 2008: anacondas resting up to 4 m up in trees, probably subadult
   // females or adult males); a poor, reluctant swimmer here, never ambushes from water
-  tree:{key:'tree',label:'Tree anaconda',short:'Tree',sex:'female',sizeClass:'medium',segs:56,spacing:0.38,size:0.42,speedMul:0.75,swimMul:0.45,avoidWater:true,patience:150,boldness:0.3,strikeRange:3.6,boldByDay:false,climber:true,arboreal:true,hungerRate:1.25,digestRate:1.4,swallowS:25,color:0x6b7a35,pal:'tree'},
+  tree:{key:'tree',label:'Tree anaconda',short:'Tree',sex:'female',sizeClass:'medium',segs:56,spacing:0.38,size:0.42,speedMul:0.75,swimMul:0.45,avoidWater:true,patience:150,boldness:0.3,strikeRange:3.6,boldByDay:false,climber:true,arboreal:true,hungerRate:1.25,digestRate:1.4,swallowK:55,color:0x6b7a35,pal:'tree'},
 };
 
 /* ============================================================
@@ -1267,23 +1551,23 @@ class SnakeBrain{
     c.rm=0.78*p.size; // body radius: clearance on trunks and limbs
     c.home=p.arboreal?GROVE_C:HOME;c.homePond=p.arboreal?nearestPond(GROVE_C):HOME;
     c.homeRange=()=>(p.arboreal?60:HOME_RANGE)*(c.ws[WS.Hunger]===3?1.5:1); // prey scarce: a starving snake ranges wider
-    c.drives=this.drives={hunger:p.arboreal?0.66:0.62,digestion:0,heat:0.5,fatigue:0,stress:0};
+    c.drives=this.drives={hunger:p.arboreal?0.66:0.62,digestion:0,heat:0.5,fatigue:0,stress:0,condition:rand(0.15,0.45)};
     c.ev=t=>world.event(`${p.short}: ${t}`);
-    c.capture=prey=>{prey.state='caught';c.carried=prey;c.capturedAt=clock.t;c.ev(`Caught ${prey.name}`);c.forcedTarget=null;world.onCatch(prey,this)};
+    c.capture=prey=>{prey.state='caught';c.carried=prey;c.capturedAt=clock.t;c.ev(`Caught ${prey.name}`);c.forcedTarget=null;c.staleCount=0;c.fastUntil=0;c.huntFails=0;world.onCatch(prey,this)};
     // a kill that was already limp is left as a carcass (another snake may take it); a live one escapes
     c.dropKill=why=>{const p2=c.carried;if(!p2)return;c.carried=null;
       if(p2.kind==='snake'){p2.brain.release(c.snake.head);c.ev(`Dropped the ${p2.name.toLowerCase()} ${why}`);return}
       if(p2.limp||clock.t-(c.capturedAt||0)>12){world.makeCarcass(p2,c.snake.mouthPos(),this);c.ev(`Abandons the carcass of ${p2.name} ${why}`)}
-      else{p2.state=p2.kind==='human'?'idle':'herd';p2.limp=false;p2.immuneUntil=clock.t+4;p2.startFlee(c.snake.head);c.ev(`Dropped ${p2.name} ${why}`)}};
+      else{p2.state=p2.kind==='human'?'idle':'herd';p2.limp=false;p2.struggle=null;p2.swallowed=0;p2.swallowDur=0;p2.immuneUntil=clock.t+4;p2.startFlee(c.snake.head);c.ev(`Dropped ${p2.name} ${why}`)}};
     c.ambushStale=()=>clock.t>c.ambushStaleAt||(c.ambushSettledAt==null&&clock.t-c.ambushChosenAt>300);
     // lying (or ready to lie) at a fresh ambush site: in the water, or (tree anaconda) on the chosen limb
-    c.atSite=c=>p.arboreal?(!!c.limbSite&&clock.t<c.limbStaleAt&&c.getState(WS.InTree)===1&&dist(c.snake.head,c.limbSite.limb.tip)<3.2)
+    c.atSite=c=>p.arboreal?(!!c.limbSite&&clock.t<c.limbStaleAt&&c.getState(WS.InTree)===1&&dist(c.snake.head,limbPt(c.limbSite.limb,c.limbSite.u??1,c.rm))<3.2)
       :(!!c.ambushPoint&&!!c.ambushPond&&!c.ambushStale()&&c.getState(WS.AtWater)===1&&dist(c.snake.head,c.ambushPoint)<6);
     c.targetNearWater=c=>!!c.target&&edgeDist(c.target.lastKnown)<12;
     // WaitInAmbush: something felt or seen is at / coming toward this pool's shore
     c.waitCond=c=>{if(p.arboreal)return false;const b=c.target;if(!b||!c.atSite(c)||c.getState(WS.BestContact)<2)return false;const o=c.ambushPond,e=dist(b.lastKnown,o)-o.r;
       if(e<4)return true;const holding=c.brain.planner.current&&c.brain.planner.current.name==='HoldAmbush';
-      if(holding)return e<18; // hysteresis while already holding
+      if(holding)return e<18||dist(b.lastKnown,c.snake.head)<p.strikeRange+3; // hysteresis while already holding (and never drop it at the closest approach)
       if(e>14||clock.t-c.lastHoldEnd<10)return false;const v=b.prey.vel;return len(v)<0.2||dot(v,sub(o,b.prey.pos))>0||c.getState(WS.TargetVisible)===1&&e<9};
     c.pursuable=c=>p.arboreal?c.getState(WS.InTree)===0&&!!c.target&&!c.target.prey.swimming:(p.sizeClass==='small'||(c.snake.inWater()&&!!c.target&&edgeDist(c.target.prey.pos)<1.5));
     c.visionRange=VISION_RANGE;c.forageUntil=0;c.lastHoldEnd=-99;c.mealLen=MEAL_DAYS.capybara*360;
@@ -1300,18 +1584,108 @@ class SnakeBrain{
     c.entryTree=()=>{if(c.limbSite&&c.getState(WS.Intent)===INTENT.hunting){const near=GROVE.filter(t=>dist(t,c.snake.head)<dist(c.limbSite.tree,c.snake.head)+4&&!c.rivalNearPoint(t,14));
         if(near.length)return near.reduce((b,t)=>dist(t,c.snake.head)+0.5*dist(t,c.limbSite.tree)<dist(b,c.snake.head)+0.5*dist(b,c.limbSite.tree)?t:b)}
       return c.refugeTree()||nearestGrove(c.snake.head)};
-    c.restPerch=kind=>{const cur=c.snake.y>0.3?(locatePerch(c.snake,c.rm)||{}).tree:null,t=cur||c.refugeTree()||nearestGrove(c.snake.head);
-      if(kind==='sun'){const l=t.limbs.find(q=>q.kind==='high')||t.limbs[0];return {tree:t,limb:l,u:0.85}}
-      const l=t.limbs.filter(q=>q.kind==='bridge').sort((a,b)=>a.y0-b.y0)[0]||t.limbs[0];return {tree:t,limb:l,u:0.55}};
-    // ambush limb: where prey traffic passes beneath (fresh scent marks below the tip, the trail, a pool edge), away from the feared rival
-    c.chooseLimbSite=()=>{const now=clock.t;let best=null;
-      for(const t of GROVE)for(const l of t.limbs){if(l.y1>6.8)continue;let n=0;
-        for(const pr of world.prey){if(pr.kind==='noise'||!pr.active)continue;for(const m of pr.liveMarks(now))if(now-m.t<240&&dist(m,l.tip)<6)n++}
-        let sc=Math.min(n,8)+(segDist(l.tip,TRAIL[0],TRAIL[1])<3?3:0)+(edgeDist(l.tip)<8?1.5:0)+Math.random()*2.5-dist(t,c.snake.head)/40;
-        if(c.rivalNearPoint(l.tip,24))sc-=10;if(c.limbSite&&c.limbSite.limb===l)sc-=3;
-        if(!best||sc>best.sc)best={t,l,sc,n}}
-      c.limbSite={tree:best.t,limb:best.l,u:1,hang:true};c.limbSettledAt=null;c.limbStaleAt=Infinity;c.limbChosenAt=now;
-      c.ev(`Chose an ambush limb on ${best.t.name}${segDist(best.l.tip,TRAIL[0],TRAIL[1])<3?' above the trail':best.n?' over a game trail':''}`)};
+    // ---- memory of places (beliefs about the world beyond prey): sites used recently, sites where it waited in vain or missed,
+    // sites where it was scared, and how much prey traffic each pool has had over the past days
+    c.siteLog=[];c.siteFear=[];c.poolMem=new Map();c.modeUse=[0,0,0,0,0];c.mood=[0,0,0,0,0].map(()=>gauss()*0.38);
+    c.staleCount=0;c.lastStaleAt=-1e9;c.groundUntil=0;c.lastProwlAt=-1e9;c.fastUntil=0;c.lastMissAt=-1e9;c.missCool=0;c.missPending=false;c.restSiteSince=0;
+    c.hab=0;c.sens=1;c.disturb=0;c.stressSrc='';c.near=new Map();c.restPref=4;c.restPrefAt=-1e9;
+    c.logSite=(pt,kind,fail)=>{if(!pt)return;c.siteLog.push({x:pt.x,z:pt.z,t:clock.t,kind,fail:!!fail});if(c.siteLog.length>90)c.siteLog.shift()};
+    c.recency=(pt,r=3,tau=2)=>{let v=0;for(const e of c.siteLog){const d=dist(e,pt);if(d<r)v+=Math.exp(-(clock.t-e.t)/(tau*clock.dayLen))*(1-0.5*d/r)}return v};
+    c.failAt=(pt,r=8)=>{let v=0;for(const e of c.siteLog)if(e.fail&&dist(e,pt)<r)v+=Math.exp(-(clock.t-e.t)/(2*clock.dayLen));return v};
+    c.noteSiteFear=(pt,w)=>{c.siteFear.push({x:pt.x,z:pt.z,t:clock.t,w});if(c.siteFear.length>30)c.siteFear.shift()};
+    c.fearOf=(pt,r=10)=>{let v=0;for(const e of c.siteFear)if(dist(e,pt)<r)v+=e.w*Math.exp(-(clock.t-e.t)/(3*clock.dayLen));return v};
+    c.traffic=o=>{const m=c.poolMem.get(o);return m?m.v*Math.exp(-(clock.t-m.t)/(2.5*clock.dayLen)):0};
+    c.noteTraffic=(o,v,pt)=>{const m=c.poolMem.get(o)||{v:0,t:clock.t,spots:[]};m.v=Math.min(6,c.traffic(o)+v);m.t=clock.t;
+      if(pt&&(!m.spots.length||dist(m.spots[m.spots.length-1],pt)>5)){m.spots.push({x:pt.x,z:pt.z,t:clock.t});if(m.spots.length>10)m.spots.shift()}c.poolMem.set(o,m)};
+    c.preyNear=(pt,r)=>{let n=0;const now=clock.t;for(const pr of world.prey){if(pr.kind==='noise'||!pr.active)continue;for(const m of pr.liveMarks(now))if(now-m.t<240&&dist(m,pt)<r)n++}return Math.min(n,8)};
+    c.waitedInVain=pt=>{c.staleCount++;c.lastStaleAt=clock.t;const e=c.siteLog.slice().reverse().find(q=>pt&&dist(q,pt)<4);if(e)e.fail=true;else c.logSite(pt,'ambush',true)};
+    // by day a fruitless wait ends the hunt until dusk (movement belongs to the night); at night it tries a few sites first
+    c.giveUpAfter=()=>c.ws[WS.TimeOfDay]===2&&c.ws[WS.Hunger]<3&&!p.boldByDay?1:(p.sizeClass==='small'?2:3)+(c.ws[WS.Hunger]===3?2:0);
+    c.followUps=()=>p.sizeClass==='small'&&!p.arboreal?1:0; // the small male may strike once more at close, unwary prey; giant and tree anaconda never
+    c.canStrike=()=>{if(c.strikes===0||clock.t-c.lastMissAt>c.missCool)return true;const b=c.target;if(!b||c.strikes>c.followUps())return false;
+      return dist(b.prey.pos,c.snake.head)<2.2&&(b.prey.aware||0)<0.3};
+    const sunAz=()=>{const a=(clock.day-0.25)*TAU;return norm({x:Math.cos(a)*120,z:50})};
+    const shaded=pt=>TREES.some(t=>Math.abs(t.x-pt.x)<7&&Math.abs(t.z-pt.z)<7&&dist(t,pt)<t.crown*0.9);
+    // RestPref (quantised with hysteresis): sun | dappled | cover | cool, from insolation, sky, body heat, day left, disturbance,
+    // its own slowly drifting mood and how long it has already rested that way (it tires of one way of resting)
+    c.restPrefScores=()=>{const W=world.weather,I=W.insol(),e=sunElev(clock.day),h=this.drives.heat,tod=todOf(clock.day),dist_=c.disturb,u=c.modeUse,m=c.mood;
+      const sc=[-1e9,-1e9,-1e9,-1e9,-1e9];
+      if(e>0.25&&W.sky<2&&clock.day<0.62&&h<0.74)sc[1]=1.0+2.4*(0.7-h)+2.2*I-1.5*dist_-0.45*u[1]+m[1];
+      if(e>0.1&&W.sky<2&&h<0.78)sc[2]=0.5+1.4*(0.66-h)+1.0*I*(W.sky===1?1.5:1)-0.6*dist_-0.45*u[2]+m[2];
+      sc[3]=0.45+1.6*dist_+(tod===2?0.25:0)+(W.sky===2?0.3:0)-0.45*u[3]+m[3];
+      sc[4]=0.4+3*Math.max(0,h-0.6)+(W.sky===2?0.7:0)+(tod===0?0.5:0)+0.6*dist_-0.35*u[4]+m[4];
+      return sc};
+    c.updateRestPref=dt=>{const k=c.restPref;for(let i=1;i<5;i++){c.modeUse[i]*=Math.exp(-dt/(0.6*clock.dayLen));c.mood[i]+=-c.mood[i]*dt/(0.7*clock.dayLen)+0.38*Math.sqrt(2*dt/(0.7*clock.dayLen))*gauss()}
+      const pres=c.snake.pres;if(/Bask/.test(pres))c.modeUse[1]+=dt/(8*HOUR);else if(pres==='Floating'||c.brain.planner.current&&c.brain.planner.current.name==='LieAlongLimb')c.modeUse[2]+=dt/(8*HOUR);
+      else if(pres==='Resting in reeds'||c.brain.planner.current&&c.brain.planner.current.name==='RestInFork')c.modeUse[3]+=dt/(8*HOUR);else if(c.snake.speed<0.2&&(pres==='Resting'||pres==='Shade'))c.modeUse[4]+=dt/(8*HOUR);
+      const sc=c.restPrefScores();let best=k,bs=sc[k]+0.6;
+      if(clock.t-c.restPrefAt<4.5*HOUR&&sc[k]>-1e8)return k; // minimum hold
+      for(let i=1;i<5;i++)if(sc[i]>bs){bs=sc[i];best=i}
+      if(best!==k){c.restPref=best;c.restPrefAt=clock.t}return c.restPref};
+    c.prefKind=()=>['cool','sun','dappled','cover','cool'][c.ws[WS.RestPref]]||'cool';
+    c.restless=()=>clock.t-c.restSiteSince>0.8*clock.dayLen||c.fearOf(c.snake.head)>0.3||c.ws[WS.Hunger]>=1;
+    // a rest spot for the pool snake: ~14 candidates around each reachable pool for the kind of rest wanted
+    c.chooseRestSite=kind=>{
+      const s=c.snake,head=s.head,tod=c.ws[WS.TimeOfDay],night=tod===0||tod===3||kind==='night';
+      const k=kind==='night'?(['deep','bask','float','reeds','deep'][c.ws[WS.RestPref]]||'deep'):kind,here=nearestPond(head),sa=sunAz();
+      const ponds=PONDS.filter(o=>o===here||night&&dist(o,head)-o.r<55&&dist(o,c.home)<c.homeRange());
+      const score=(o,pt,dir,travel)=>{let sc=-(travel?dist(head,pt)/(night?30:11):0)-3*c.fearOf(pt)-(c.rivalNearPoint(pt,20)?3:0)-pathNear(pt)*(tod===2?1.1:0.4);
+        if(k==='bask'||k==='float')sc+=shaded(pt)?-2:0.8*dot(mul(dir,-1),sa);
+        if(k==='reeds'||k==='bask')sc+=inGrass(add(o,mul(dir,o.r+3)))?(k==='reeds'?1.3:0.4):0;
+        if(k==='reeds')sc+=TREES.some(t=>dist(t,pt)<5)?0.5:0;
+        if(kind==='night')sc+=0.3*c.traffic(o);return sc};
+      let best=null;
+      for(const o of ponds)for(let i=0;i<14;i++){const a=i/14*TAU+rand(-0.2,0.2),dir=hdir(a);
+        const inset=k==='bask'||k==='reeds'?rand(0.2,0.6):k==='float'?rand(1.8,3):rand(Math.min(4,o.r*0.3),o.r*0.55),pt=add(o,mul(dir,o.r-inset));if(len(pt)>ISLAND_R-8)continue;
+        const sc=score(o,pt,dir,true)-1.4*c.recency(pt,3.5)+rand(0,0.4)-(kind==='night'&&dist(pt,head)<8?2:0);if(!best||sc>best.sc)best={p:pt,o,sc,k}}
+      const rs=c.restSite;
+      if(rs&&rs.k===k&&dist(head,rs.p)<4&&kind!=='night'){const dir=norm(sub(rs.p,rs.o)),sc0=score(rs.o,rs.p,dir,false)+0.9;if(sc0>=best.sc)best=rs} // staying put
+      else if(kind!=='night'&&s.y<0.5){ // changing the way it rests without moving: surface where it lies to float, sink in place, stay in the reeds...
+        const ed=edgeDist(head),ok=k==='deep'?ed<-3:k==='float'?ed<-0.8&&ed>-4.5:k==='bask'?ed>-0.6&&ed<1.6&&!shaded(head)&&!inGrass(head):ed>-0.6&&ed<2&&inGrass(add(here,mul(norm(sub(head,here)),here.r+3)));
+        if(ok){const dir=norm(sub(head,here)),sc0=score(here,head,dir,false)+0.6;if(sc0>=best.sc)best={p:{...head},o:here,sc:sc0,k,inPlace:true}}}
+      if(best!==rs){if(!rs||dist(best.p,head)>6)c.restSiteSince=clock.t;if(!best.inPlace)c.logSite(best.p,k);
+        if(!c.lastSiteEv||clock.t-c.lastSiteEv>2*HOUR){c.lastSiteEv=clock.t;c.ev(`Picks a ${{bask:'sunny bank',float:'spot in the shallows',reeds:'spot in the reeds',deep:'deeper spot'}[k]} at ${best.o.name}${kind==='night'?' (moving by night)':''}`)}}
+      if(!best)best={p:edgePoint(here,head,3),o:here,sc:0,k};c.restSite=best;return best};
+    // a perch for the tree anaconda: any limb of this tree or a neighbour (any grove tree at night), at varied points along it
+    const perchScore=(t,l,u,kind,q)=>{const sa=sunAz(),sunnyL=l.kind==='high'?1:0.25+0.35*Math.max(0,dot(l.dir,sa));let sc=-(c.rivalNearPoint(q,20)?4:0)-2*c.fearOf(q,6);
+      if(kind==='sun')sc+=2*sunnyL+(l.y1>7?0.5:0);else if(kind==='cool')sc+=1.5*(1-sunnyL)+(l.kind==='bridge'?0.4:0);else if(kind==='cover')sc+=1.4*(1-u)+(l.kind==='bridge'?0.3:0);else sc+=0.8*(1-Math.abs(sunnyL-0.5))+(l.kind==='low'?0.3:0);return sc};
+    c.choosePerch=kind=>{const s=c.snake,tod=c.ws[WS.TimeOfDay],night=tod===0||tod===3;
+      const cur=s.y>0.3?(locatePerch(s,c.rm)||{}).tree:null,base=cur||c.refugeTree()||nearestGrove(s.head);
+      const trees=GROVE.filter(t=>(t===base||(night?dist(t,base)<30:base.nb.includes(t)))&&!c.rivalNearPoint(t,22));if(!trees.length)trees.push(base);
+      const us=kind==='cover'?[0.3,0.4,0.5]:kind==='sun'?[0.55,0.7,0.85]:[0.45,0.6,0.75,0.9];let best=null;
+      for(const t of trees)for(const l of t.limbs)for(const u0 of us){const u=clamp(u0+rand(-0.06,0.06),0.25,0.93),q=limbPt(l,u,c.rm);
+        const sc=perchScore(t,l,u,kind,q)-dist(t,s.head)/(night?25:10)-2.2*c.recency(q,2.5,5)+rand(0,0.5);if(!best||sc>best.sc)best={tree:t,limb:l,u,sc,q,kind}}
+      const ps=c.perchSite;
+      if(ps&&s.y>0.6&&dist(s.head,ps.q)<1.6&&perchScore(ps.tree,ps.limb,ps.u,kind,ps.q)+(ps.kind===kind?0.9:0.6)>=best.sc){ps.kind=kind;return ps} // stays on this limb, lying differently
+      c.perchSite=best;c.logSite(best.q,'perch');if(!ps||dist(best.q,ps.q)>5)c.restSiteSince=clock.t;return best};
+    // ambush limb: where prey traffic passes beneath (fresh scent marks below the limb, the trail, a pool edge), away from the feared rival,
+    // not a limb it hung from in vain recently; by day only nearby limbs (it relocates through the canopy mostly at dusk and at night)
+    c.chooseLimbSite=()=>{const now=clock.t,tod=c.ws[WS.TimeOfDay],night=tod!==2;let best=null;
+      for(const t of GROVE)for(const l of t.limbs){if(l.y1>6.8)continue;for(const u0 of [0.62,0.8,1]){const u=Math.min(1,u0+rand(-0.05,0.05)),q=limbPt(l,u,c.rm);
+        let n=0;for(const pr of world.prey){if(pr.kind==='noise'||!pr.active)continue;for(const m of pr.liveMarks(now))if(now-m.t<240&&dist(m,q)<6)n++}
+        let sc=Math.min(n,8)*0.8+(segDist(q,TRAIL[0],TRAIL[1])<3?2.5:0)+(edgeDist(q)<8?1.5:0)+rand(0,1.2)-dist(t,c.snake.head)/(night?40:12)
+          -3*c.recency(q,3,5)-2*c.failAt(q,4)-2*c.fearOf(q,8);
+        if(c.rivalNearPoint(q,24))sc-=10;
+        if(!best||sc>best.sc)best={t,l,u,sc,n,q}}}
+      c.limbSite={tree:best.t,limb:best.l,u:best.u,hang:true};c.limbSettledAt=null;c.limbStaleAt=Infinity;c.limbChosenAt=now;c.logSite(best.q,'limb');
+      c.ev(`Chose an ambush limb on ${best.t.name}${segDist(best.q,TRAIL[0],TRAIL[1])<3?' above the trail':best.n?' over a game trail':''}`)};
+    // aquatic ambush site: fresh traffic at the edge now, remembered traffic per pool, minus recent use, failures and scares
+    c.chooseAmbushSite=()=>{
+      const sn=c.snake.head,now=clock.t;c.ambushSettledAt=null;
+      if(c.ambushPoint&&!c.ambushStale()&&dist(sn,c.ambushPoint)<40&&now-c.ambushChosenAt<4*HOUR){c.ev(`Goes back to its ambush site at ${c.ambushPond.name}`);return}
+      const tod=c.ws[WS.TimeOfDay],day=(tod===2||tod===1)&&!p.boldByDay,here=nearestPond(sn);
+      let ponds=PONDS.filter(o=>dist(o,c.home)<c.homeRange()&&(!day||o===here||dist(o,sn)-o.r<20));if(!ponds.length)ponds=[here];
+      let best=null;const inset=p.sizeClass==='small'?1.6:2.2;
+      for(const o of ponds){const pts=[];for(const pr of world.prey){if(pr.kind==='noise')continue;for(const m of pr.liveMarks(now))if(now-m.t<200&&Math.abs(dist(m,o)-o.r)<9)pts.push(m)}
+        const cands=[];for(const m of pts){let n=0;for(const q of pts)if(dist(m,q)<8)n++;cands.push({m,n})}
+        cands.sort((a,b)=>b.n-a.n);const pickC=cands.slice(0,3);const mem=c.poolMem.get(o);if(mem)for(const q of mem.spots.slice(-3))pickC.push({m:q,n:1});
+        for(let k=0;k<4;k++)pickC.push({m:add(o,hdir(Math.random()*TAU)),n:0});if(o===here)pickC.push({m:{...sn},n:0}); // or right where it lies
+        const tr=c.traffic(o);
+        for(const cd of pickC){const ap=edgePoint(o,cd.m,inset);
+          const sc=Math.min(cd.n,8)*0.7+1.6*Math.min(2,tr)-dist(sn,ap)/(day?6:30)-2.2*c.recency(ap,5)-2.5*c.failAt(ap,8)-2*c.fearOf(ap)-(c.rivalNearPoint(ap,20)?4:0)+rand(0,0.8);
+          if(!best||sc>best.sc)best={o,ap,sc,n:cd.n,tr}}}
+      const o=best.o;c.ambushPond=o;c.ambushPoint=best.ap;c.ambushChosenAt=now;c.ambushStaleAt=Infinity;
+      c.ev(`Chose ambush site at ${o.name}${best.n>=2?' by a fresh game trail':best.tr>0.8?' (prey have been coming here)':''}`)};
     c.rivalInReach=()=>{const r=c.rival();return !!r&&!!c.rivalB&&clock.t-c.rivalB.lastSight<1&&r.body.y<0.5&&dist(r.body.head,c.snake.head)<=p.strikeRange+1.5};
     c.cannibalChance=()=>{if(c.cannibalRollAt&&clock.t-c.cannibalRollAt<120)return c.cannibalOK;c.cannibalRollAt=clock.t;c.cannibalOK=Math.random()<0.3;return c.cannibalOK};
     c.seizeRival=r=>{r.dead=true;r.planner.stopOp(r.ctx,'abort');r.planner.clearPlan(r.ctx);if(r.ctx.carried)r.ctx.dropKill('as it is seized');
@@ -1376,9 +1750,10 @@ class SnakeBrain{
           b.lastScent=now;contact=true;
         }
       }
-      if(contact)b.lastContact=now;
+      if(contact){if(now-b.lastContact>4&&!s.submerge)s.kickTongue(); // a new scent or tremor: a burst of tongue flicks
+        b.lastContact=now;if(prey.kind!=='noise'&&edgeDist(prey.pos)<10)c.noteTraffic(nearestPond(prey.pos),dt*0.05*b.confidence,prey.pos)}
       if(now-b.lastSight>0.01)b.confidence-=dt*0.0075*(1+(now-b.lastContact)*4);
-      b.best=now-b.lastSight<2?3:now-b.lastVib<3?2:now-b.lastScent<6?1:0;
+      b.best=now-b.lastSight<2?3:now-b.lastVib<4.5?2:now-b.lastScent<6?1:0; // contact type held a few seconds (no flapping)
       if(b.confidence<0.05){c.beliefs.delete(prey);continue}
       if(fresh)c.beliefs.set(prey,b);
     }
@@ -1414,24 +1789,50 @@ class SnakeBrain{
   updateDrives(dt){
     const d=this.drives,c=this.ctx,s=this.body,p=this.p;
     // a capybara or a person lasts the snake ~5-10 game days (MEAL_DAYS); appetite only returns once the meal is mostly digested
-    if(d.digestion<0.15)d.hunger=Math.min(1,d.hunger+dt/1200*p.hungerRate);
-    d.digestion=Math.max(0,d.digestion-dt/c.mealLen);
+    // metabolism follows body heat: a warm snake digests (and grows hungry again) faster, a cold spell slows everything down
+    const W=world.weather,met=0.55+0.9*d.heat;
+    // body condition (reserves): built up by meals, slowly used up; a well-fed snake is in no hurry to hunt again, a lean one soon is
+    d.condition=Math.max(0,d.condition-dt/(22*clock.dayLen));
+    if(d.digestion<0.15)d.hunger=Math.min(1,d.hunger+dt/1200*p.hungerRate*(0.6+0.8*d.heat)*clamp(2.2-2.4*d.condition,0.2,2.2));
+    d.digestion=Math.max(0,d.digestion-dt/c.mealLen*met);
     s.bulge=d.digestion;
-    const e=sunElev(clock.day);const ambient=0.15+0.7*Math.max(0,e);
-    let env=ambient;
-    if(s.submerge&&s.inWater())env=0.42;
-    else if(s.y>0.6)env=s.pres==='Shade'||s.pres==='Resting in crown'?Math.min(ambient,0.45):ambient; // in a crown's shade, or out on a sunny limb
-    else if(dist(nearestTree(s.head),s.head)<4)env=Math.min(ambient,0.5);
+    // body heat relaxes toward its surroundings: air (insolation and the day's temperature), water (buffered), shade; basking adds sun
+    const I=W.insol(),amb=W.ambient(),inW=s.inWater();let env=amb;
+    if(s.submerge&&inW)env=W.water();
+    else if(inW)env=lerp(W.water(),amb+0.2*I,0.5); // floating: back in the sun, belly in the water
+    else if(s.y>0.6)env=s.pres==='Shade'||s.pres==='Resting in crown'||s.pres==='Digesting'?Math.min(amb,0.45):amb+0.1*I;
+    else if(inGrass(s.head)||dist(nearestTree(s.head),s.head)<4)env=Math.min(amb,0.5);
     d.heat+=(env-d.heat)*dt/180;
-    if(s.pres==='Basking'&&e>0)d.heat+=0.01*dt;
+    if((s.pres==='Basking'||s.pres==='Floating')&&I>0)d.heat+=(s.pres==='Basking'?0.0095:0.004)*I/Math.sqrt(p.size)*dt; // a big body warms slowly (hours of basking)
     d.heat=clamp(d.heat,0,1);
     if(s.speed<0.5)d.fatigue=Math.max(0,d.fatigue-0.05*dt);
     if(d.fatigue<0.2&&c.strikes>=3)c.strikes=0; // rested: may strike again
-    d.stress=Math.max(0,d.stress-dt/60);
-    let crowd=0;for(const h of this.world.prey)if(h.kind==='human'&&h.active&&h.state!=='caught'&&dist(h.pos,s.head)<6&&!(c.target&&c.target.prey===h&&c.ws[WS.Intent]===1))crowd++;
-    if(crowd>=2)d.stress=Math.min(1,d.stress+0.25*crowd*dt);
+    if(c.strikes>0&&clock.t-c.lastMissAt>c.missCool&&!c.lunging)c.strikes=0; // the cool-down after a miss is over
+    d.stress=Math.max(0,d.stress-dt/80);
+    // disturbance by people, graded: each person it feels or sees within ~15 m adds stress by distance, approach and speed,
+    // weighted by how exposed the snake is (on an open bank > in reeds > afloat > submerged > up a tree); people passing by
+    // without incident habituate it, a scare sensitises it (and the place is remembered)
+    const exposure=s.y>1.2?0.2:(s.submerge&&inW)?(s.deep?0.15:0.45):inW?0.6:inGrass(s.head)?0.55:1;
+    const quarry=c.ws[WS.Intent]===INTENT.hunting&&c.ws[WS.Digesting]===0;let gain=0,src=null,sd=1e9;
+    for(const h of this.world.prey){if(h.kind!=='human')continue;const was=c.near.get(h);
+      if(!h.active||h.state==='caught'||h.state==='carcass'){c.near.delete(h);continue}
+      const dd=dist(h.pos,s.head);
+      if(dd>16){if(was!==undefined){c.near.delete(h);if(was<0.7)c.hab=Math.min(0.6,c.hab+0.05)}continue}
+      if(was===undefined)c.near.set(h,d.stress);
+      if(h.speed<0.5&&dd>7&&!(dd<c.visionRange&&!losBlocked(s.head,h.pos)))continue; // neither felt nor seen
+      const closing=dot(h.vel,norm(sub(s.head,h.pos)));
+      let w=exposure*Math.pow(clamp((15-dd)/11,0,1),1.5)*(closing>0.3?1:0.45)*(h.speed>2.5?1.5:1);
+      if(quarry&&h.state!=='flee')w*=0.15; // a hunting snake reads people as quarry, not as a threat
+      gain+=w;if(dd<sd){sd=dd;src=h}
+    }
+    gain*=(1-c.hab)*c.sens;
+    d.stress=Math.min(1,d.stress+gain*0.14*dt);
+    if(src&&gain>0.02){c.stressSrc='people';c.threatPoint={...src.pos};c.near.set(src,Math.max(c.near.get(src)||0,d.stress))}
+    c.disturb=c.disturb*Math.exp(-dt/(6*HOUR))+gain*dt*0.08;
+    c.hab=Math.max(0,c.hab-dt/clock.dayLen*0.12);c.sens=1+(c.sens-1)*Math.exp(-dt/(2*clock.dayLen));
+    c.updateRestPref(dt);
     // fear of a much bigger conspecific raises stress (wary when near, threatened when close and the small snake is on the ground)
-    if(c.rivalFeared()&&c.ws[WS.RivalNear]>=2)d.stress=Math.max(d.stress,c.ws[WS.RivalNear]===3&&c.ws[WS.InTree]===0?0.75:0.45);
+    if(c.rivalFeared()&&c.ws[WS.RivalNear]>=2){const v=c.ws[WS.RivalNear]===3&&c.ws[WS.InTree]===0?0.75:0.45;if(v>d.stress){d.stress=v;c.stressSrc='rival'}}
     if(c.order&&clock.t>c.order.expiresAt)this.clearDirector('expired');
     // spacing (plan §11.3): ~10 m apart while moving; the small one keeps ~20 m from the giant on the ground; none while resting or digesting
     s.avoid=null;const r=c.rival();
@@ -1466,7 +1867,8 @@ class SnakeBrain{
     hyst(WS.Hunger,d.hunger,[[0.3,0.25],[0.6,0.5],[0.9,0.85]]);
     c.setState(WS.Digesting,d.digestion>0.5?2:d.digestion>0.15?1:0);
     c.setState(WS.Thermal,d.heat>=(w[WS.Thermal]===2?0.72:0.8)?2:d.heat<=(w[WS.Thermal]===1?0.38:0.3)?1:0);
-    hyst(WS.Stress,d.stress,[[0.35,0.3],[0.7,0.6]]);
+    const stWas=w[WS.Stress];hyst(WS.Stress,d.stress,[[0.35,0.3],[0.7,0.6]]);
+    if(w[WS.Stress]>stWas&&c.stressSrc!=='rival'){c.noteSiteFear(s.head,w[WS.Stress]===2?1:0.3);if(w[WS.Stress]===2){c.sens=Math.min(1.8,c.sens+0.3);c.hab*=0.5}} // sensitisation
     c.setState(WS.TimeOfDay,todOf(clock.day));
     c.setState(WS.Season,0);c.setState(WS.Breeding,0);c.setState(WS.Shedding,0);
     // claim board: 1 = I hold the claim (or it is free), 2 = the other snake claimed this prey first
@@ -1485,6 +1887,7 @@ class SnakeBrain{
     // a carcass is free unless the rival is at it and feeding (a fleeing rival has given it up); a feared rival anywhere near makes it unsafe
     let cf=0;const cp=c.carcass;if(cp){const rr=r&&!r.dead?r.body.head:null,rd=rr?dist(rr,cp.pos):1e9;cf=(c.rivalFeared()?rd>20:!(rd<6&&this.world.board.intent.get(r)===INTENT.feeding))?1:0}
     c.setState(WS.Carcass,cf);
+    c.setState(WS.Sky,this.world.weather.sky);c.setState(WS.RestPref,c.restPref);c.setState(WS.HuntMood,clock.t<c.fastUntil?1:0);
   }
   tick(dt){
     if(this.gone)return;
@@ -1502,7 +1905,7 @@ class SnakeBrain{
    ============================================================ */
 const HUMANS=[['Kaia','#e9724c'],['Mart','#f2c14e'],['Liis','#7ec4cf'],['Rasmus','#c792ea']];
 const world={
-  prey:[],herds:[],fear:[],pondAvoidUntil:0,snake:null,brain:null,snakes:[],events:[],board:{claims:new Map(),intent:new Map()},stats:{},
+  prey:[],herds:[],fear:[],pondAvoidUntil:0,weather,snake:null,brain:null,snakes:[],events:[],board:{claims:new Map(),intent:new Map()},stats:{},
   live(){return this.snakes.filter(b=>!b.dead&&!b.gone).map(b=>b.body)},
   rivalOf(me){return this.snakes.find(o=>o!==me&&!o.dead&&!o.gone)||null},
   publishIntent(brain,intent){this.board.intent.set(brain,intent)}, // read by the other snake as its RivalIntent byte
@@ -1514,14 +1917,17 @@ const world={
       if(!a.includes(b)&&a.length<2){a.push(b);B.set(pr,a);if(a.length===2&&(!pr.contestAt||clock.t-pr.contestAt>120)){pr.contestAt=clock.t;this.event(`Both snakes are after ${pr.name}; the ${a[0].p.label.toLowerCase()} claimed first`)}}}},
   // food is limited: an eaten animal is replaced only after several game days (a newcomer from the island edge)
   replenish(p){return rand(3,5)*clock.dayLen},
-  makeCarcass(p,pos,by){p.state='carcass';p.limp=true;p.pos={...pos};p.vel={x:0,z:0};p.carcassUntil=clock.t+clock.dayLen;p.takenFrom=by||null},
+  makeCarcass(p,pos,by){p.state='carcass';p.limp=true;p.swallowed=0;p.swallowDur=0;p.pos={...pos};p.vel={x:0,z:0};p.carcassUntil=clock.t+clock.dayLen;p.takenFrom=by||null},
   snakeEaten(b){b.gone=true;b.dead=false;b.respawnAt=clock.t+3*clock.dayLen;this.event(`The ${b.p.label.toLowerCase()} is gone. Another may move into the grove in a few days`)},
   // fear map: prey avoid places where a snake was seen or struck, for FEAR_LIFE seconds
-  addFear(p){const now=clock.t;const f=this.fear.find(e=>dist(e,p)<8);if(f){f.x=p.x;f.z=p.z;f.t=now}else this.fear.push({x:p.x,z:p.z,t:now});this.fear=this.fear.filter(e=>now-e.t<FEAR_LIFE)},
-  fearAt(p,r=FEAR_R){let n=0;for(const e of this.fear)if(clock.t-e.t<FEAR_LIFE&&dist(e,p)<r)n++;return n},
+  addFear(p,life=FEAR_LIFE){const now=clock.t;const f=this.fear.find(e=>dist(e,p)<8);if(f){f.x=p.x;f.z=p.z;f.life=Math.max(life,f.life-(now-f.t));f.t=now}else this.fear.push({x:p.x,z:p.z,t:now,life});this.fear=this.fear.filter(e=>now-e.t<e.life)},
+  fearAt(p,r=FEAR_R){let n=0;for(const e of this.fear)if(clock.t-e.t<e.life&&dist(e,p)<r)n++;return n},
   feared(p,r=FEAR_R){return this.fearAt(p,r)>0},
   onCatch(prey,brain){
-    const sh=brain.body.head;this.addFear(sh);this.stats.catches=(this.stats.catches||[]);this.stats.catches.push({t:clock.t,by:brain.p.key,prey:prey.name});
+    const sh=brain.body.head;this.addFear(sh,clock.dayLen*rand(2,4));this.stats.catches=(this.stats.catches||[]);this.stats.catches.push({t:clock.t,by:brain.p.key,prey:prey.name}); // a kill site is avoided for days
+    const kp=nearestPond(sh),atPool=dist(sh,kp)<kp.r+10;
+    for(const h of this.herds)if(atPool)h.noteDanger(kp,h===prey.herd?2:0.8);
+    for(const h of this.prey)if(h.kind==='human'&&atPool)h.avoidPond.set(kp,Math.max(h.avoidPond.get(kp)||0,clock.t+clock.dayLen*rand(1.5,3)));
     if(prey.kind==='capybara'){prey.herd.alarm(this,sh,`${prey.name} was seized`);return}
     this.pondAvoidUntil=clock.t+400; // a companion was taken: everyone runs to camp, regroups, and keeps away from the pools
     for(const h of this.prey)if(h!==prey&&h.kind==='human'&&h.active&&h.state!=='caught'&&h.state!=='carcass'){h.startFlee(sh,add(CAMP,randInCircle(4)),30);h.regroup=true;h.vigilantUntil=clock.t+400}
@@ -1532,11 +1938,11 @@ const world={
   nearestHuman(p){let best=null,bd=1e9;for(const h of this.prey)if(h.kind==='human'&&h.active&&h.state!=='caught'&&h.state!=='carcass'){const d=dist(h.pos,p);if(d<bd){bd=d;best=h}}return best},
   respawn(p){ // newcomers arrive from the island edge on the far side from the snakes
     const L=this.live(),c=L.length?{x:L.reduce((a,b)=>a+b.head.x,0)/L.length,z:L.reduce((a,b)=>a+b.head.z,0)/L.length}:{x:0,z:0};
-    const a=headingOf(mul(c,-1))+rand(-0.7,0.7);p.pos=mul(hdir(a),ISLAND_R-7);p.marks=[];p.lastMark={...p.pos};p.aware=0;p.vel={x:0,z:0};p.limp=false;
+    const a=headingOf(mul(c,-1))+rand(-0.7,0.7);p.pos=mul(hdir(a),ISLAND_R-7);p.marks=[];p.lastMark={...p.pos};p.aware=0;p.vel={x:0,z:0};p.limp=false;p.struggle=null;p.swallowed=0;p.swallowDur=0;p.mass=preyMass(p.kind);
     if(p.kind==='human'){p.state='walk';p.goal=add(CAMP,randInCircle(4));p.goalSpeed=1.4;p.crouch=false;p.dwell=rand(6,12);p.atPond=false}else p.state='join';
     this.event(p.kind==='human'?`${p.name} lands on the island`:`${p.name} joins the herd from the island edge`)},
   reset(persKey){
-    clock.t=0;this.prey=[];this.events=[];this.fear=[];this.herds=[];this.pondAvoidUntil=0;this.board={claims:new Map(),intent:new Map()};this.stats={};
+    clock.t=0;clock.day0=clock.day;weather.reset();this.prey=[];this.events=[];this.fear=[];this.herds=[];this.pondAvoidUntil=0;this.board={claims:new Map(),intent:new Map()};this.stats={};
     HUMANS.forEach(([n,col],i)=>{this.prey.push(new Prey('human',n,col,add(CAMP,randInCircle(5))))});
     [[PONDS[0],0],[PONDS[3],2]].forEach(([o,k],hi)=>{const ms=[];for(let i=k;i<k+2;i++){const p=new Prey('capybara',`Capybara ${i+1}`,'#8a6a4a',{x:0,z:0});ms.push(p);this.prey.push(p)}
       const h=new Herd(hi,o,ms);if(o===HOME)h.anchor=h.goal=add(o,mul(norm(sub(o,{x:0,z:0})),o.r+7)); /* far side from the snake release point */ms.forEach(m=>{m.pos=add(h.slot(m),randInCircle(1));m.lastMark={...m.pos}});this.herds.push(h)});
@@ -1545,7 +1951,7 @@ const world={
     this.event(`${PERSONALITIES[persKey].label} released at ${HOME.name}; a tree anaconda lives in the grove to the west`);
   },
   step(dt){
-    clock.t+=dt;clock.day=(clock.day+dt/clock.dayLen)%1;
+    clock.t+=dt;clock.day=(clock.day+dt/clock.dayLen)%1;weather.update(dt);
     for(const h of this.herds)h.update(dt,this);
     for(const p of this.prey)p.update(dt,this);
     this.prey=this.prey.filter(p=>p.kind!=='noise'||p.active);
@@ -1958,7 +2364,7 @@ function renderSnake(brain,rdt){
   const dph=R.k*s.speed*(headW?1.25:1)*gdt;R.phase+=dph;
   const amp=R.amp*(dph>0.8?0.8/dph:1); // fade instead of strobing at high time scales
   R.rect+=((creep&&s.speed>0.03?1:0)-R.rect)*ease(3,sdt);if(s.speed>0.03)R.phase2+=3*gdt;
-  R.sweep+=((s.sweep?Math.sin(s.sweepT*1.3)*0.5:0)-R.sweep)*ease(6,sdt);
+  R.sweep+=((s.sweepA||0)-R.sweep)*ease(6,sdt); // sim-driven: glances toward a sensed bearing, short looks while scanning, rare shifts at rest
   sampleSpine(s,R);
   R.tx[0]=R.bx[0];R.tz[0]=R.bz[0];R.tx[N-1]=R.bx[N-1];R.tz[N-1]=R.bz[N-1];
   for(let i=1;i<N-1;i++){R.tx[i]=(R.bx[i-1]+2*R.bx[i]+R.bx[i+1])*0.25;R.tz[i]=(R.bz[i-1]+2*R.bz[i]+R.bz[i+1])*0.25}
@@ -1973,7 +2379,7 @@ function renderSnake(brain,rdt){
     R.px[i]=x;R.pz[i]=z;R.ux[i]=0;R.uy[i]=1;R.uz[i]=0;R.hel[i]=0;
   }
   // radius: profile x bulge x rectilinear pulse
-  const sw=cur&&cur.name==='Swallow'&&op?clamp(op.t/(0.9*(op.dur||4)),0,1):-1;let bS=-99,bA=0;
+  const sw=cur&&cur.name==='Swallow'&&op?clamp((op.prog??op.t/(op.dur||4))/0.9,0,1):-1;let bS=-99,bA=0;
   if(sw>=0){bS=lerp(0.3*hb,hb+1.6*hw,sstep(0.45,1,sw));bA=R.bulgeAmp*sstep(0.45,0.75,sw)}
   else if(s.bulge>0.02){bS=lerp(hb+1.6*hw,0.62*L,Math.pow(1-s.bulge,0.4));bA=R.bulgeAmp*clamp((s.bulge-0.02)/0.25,0,1)}
   for(let i=0;i<N;i++){const si=i*ds;let r=R.prof[i];if(bA>0){const u=(si-bS)/R.bulgeSig;r*=1+bA*Math.exp(-u*u)}if(R.rect>0.01&&si>hb)r*=1+0.06*R.rect*Math.sin(R.k2*si-R.phase2);R.rr[i]=r;
@@ -2053,8 +2459,7 @@ function renderSnake(brain,rdt){
   // head transform, jaw, tongue
   R.head.position.set(Hx,Hy,Hz);R.head.rotation.set(0,-Hyaw,Hp);
   R.jaw.rotation.z=-s.mouth*(sw>=0?1.15:c.carried?0.85:0.75);
-  if(s.tongue)R.tongT+=sdt;else R.tongT=0;
-  let ext=0;if(s.tongue){const ph=(R.tongT%1.5)/1.5;ext=ph<0.1?ph/0.1:ph<0.45?1:ph<0.55?1-(ph-0.45)/0.1:0}
+  const ext=s.tongueExt||0; // sim-driven tongue bursts
   R.tongue.visible=ext>0.02;R.tongue.scale.set(Math.max(0.02,ext),1,1);R.tongue.rotation.z=(0.28*Math.sin(R.vt*28)-0.08)*ext;
   R.head.updateMatrixWorld();R.holdW.set(R.xt-0.32*R.hl,-0.08*hw,0).applyMatrix4(R.head.matrixWorld);
   // water effects
@@ -2078,7 +2483,7 @@ function layPrey(g,kind,cx,cy,cz,ax,az,roll,sc){
   g.position.set(cx,cy,cz).sub(_lc.set(0,h*sc,0).applyQuaternion(g.quaternion));
 }
 function poseCaught(pr,g,brain){
-  const R=brain.R,pl=brain.planner,sw=pl.current&&pl.current.name==='Swallow'&&pl.op?clamp(pl.op.t/(0.9*(pl.op.dur||4)),0,1):-1;
+  const R=brain.R,pl=brain.planner,sw=pl.current&&pl.current.name==='Swallow'&&pl.op?clamp((pl.op.prog??pl.op.t/(pl.op.dur||4))/0.9,0,1):-1;
   const yaw=R.head.rotation.y*-1,Fx=Math.cos(yaw),Fz=Math.sin(yaw);
   let cx=R.holdW.x,cy=R.holdW.y,cz=R.holdW.z,ax=-Fz,az=Fx,sc=1;
   const roll=pr.limp?0.15:Math.sin(R.vt*7+pr.id)*0.35; // struggling until the constriction has done its work
@@ -2218,11 +2623,11 @@ function renderPrey(rdt){
     if(pr.kind==='noise'){const k=(pr.expires-clock.t)/2.5;g.position.set(pr.pos.x,surfY(pr.pos.x,pr.pos.z)+0.15,pr.pos.z);U.ring.scale.setScalar(1+(1-k)*4);U.ring.material.opacity=0.8*k;continue}
     U.fadeIn=Math.min(1,U.fadeIn+fdt/1.3);const fi=sstep(0,1,U.fadeIn);
     if(pr.kind==='human')animHuman(pr,g,gdt,t);else animCapybara(pr,g,gdt,t);
-    if(pr.state==='caught'){const k=world.snakes.find(b=>b.ctx.carried===pr);if(k){const pl=k.planner,sw=pl.current&&pl.current.name==='Swallow'&&pl.op?clamp(pl.op.t/(0.9*(pl.op.dur||4)),0,1):-1;poseCaught(pr,g,k);setFade(g,sw>=0?1-sstep(0.7,0.94,sw):1)}continue}
+    if(pr.state==='caught'){const k=world.snakes.find(b=>b.ctx.carried===pr);if(k){const pl=k.planner,sw=pl.current&&pl.current.name==='Swallow'&&pl.op?clamp((pl.op.prog??pl.op.t/(pl.op.dur||4))/0.9,0,1):-1;poseCaught(pr,g,k);setFade(g,sw>=0?1-sstep(0.7,0.94,sw):1)}continue}
     if(pr.state==='carcass'){const gy=groundY(pr.pos.x,pr.pos.z);layPrey(g,pr.kind,pr.pos.x,Math.max(gy,WATER_Y)+(pr.kind==='human'?0.2:0.3),pr.pos.z,1,0.3,0.15,1);setFade(g,1);continue} // a carcass lies on its side
     const gy=groundY(pr.pos.x,pr.pos.z),ty=pr.kind==='capybara'?Math.max(gy,lerp(gy,WATER_Y-0.72,U.wsw)):gy;
     U.y=U.y===null?ty:U.y+(ty-U.y)*ease(6,gdt||rdt);
-    g.position.set(pr.pos.x,U.y,pr.pos.z);g.rotation.set(0,-pr.h,0);g.scale.setScalar(lerp(0.55,1,fi));setFade(g,fi);
+    g.position.set(pr.pos.x,U.y,pr.pos.z);g.rotation.set(0,-pr.h,0);g.scale.setScalar(lerp(0.55,1,fi)*(pr.kind==='capybara'?Math.cbrt(pr.mass||1):1));setFade(g,fi); // young capybaras are smaller
     if(pr.kind==='capybara'&&(pr.swimming||pr.drinking)&&gdt>0){U.ripT-=gdt;if(U.ripT<=0){const hx=pr.pos.x+Math.cos(pr.h)*0.75,hz=pr.pos.z+Math.sin(pr.h)*0.75;
       if(pr.swimming&&pr.speed>0.2){U.ripT=0.45;addRipple(hx,hz,0.25,0.55,2.2,0.7)}else if(pr.drinking){U.ripT=1.6+Math.random();addRipple(hx,hz,0.05,0.3,1.8,0.5)}else U.ripT=0.5}}
   }
@@ -2299,7 +2704,7 @@ function updateSky(){
   scene.fog.color.copy(hor).lerp(top,0.1);scene.fog.density=lerp(0.0042,0.0016,d)+0.0012*dusk;
   const a=(clock.day-0.25)*TAU,ft=controls.target;const sd=skyU.sunDir.value.set(Math.cos(a)*120,Math.sin(a)*150,50).normalize();
   skyU.sunCol.value.copy(SUNW).lerp(SUND,sstep(0.02,0.5,e));
-  if(e>-0.04){sun.position.set(ft.x+sd.x*200,sd.y*200,ft.z+sd.z*200);sun.color.copy(skyU.sunCol.value);sun.intensity=1.5*sstep(-0.04,0.3,e)}
+  if(e>-0.04){sun.position.set(ft.x+sd.x*200,sd.y*200,ft.z+sd.z*200);sun.color.copy(skyU.sunCol.value);sun.intensity=1.5*sstep(-0.04,0.3,e)*(1-0.6*weather.cloud)}
   else{sun.position.set(ft.x-sd.x*200,-sd.y*200,ft.z-sd.z*200);sun.color.copy(MOONC);sun.intensity=0.3*sstep(-0.04,-0.3,e)}
   sun.target.position.copy(ft);
   hemi.color.copy(_ca.set(0x34508f)).lerp(_cb.set(0xb3cfe6),d);hemi.groundColor.copy(_ca.set(0x0a0c0e)).lerp(_cb.set(0x4c4a30),d);hemi.intensity=lerp(0.07,0.55,d)+0.08*dusk;
@@ -2397,7 +2802,7 @@ renderer.domElement.addEventListener('pointerup',e=>{
     const el=world.snakes.filter(b=>!b.dead&&!b.gone&&!b.ctx.carried&&!b.ctx.lunging).sort((a,b)=>dist(a.body.head,p)-dist(b.body.head,p))[0];
     if(el){el.issueRush(p);if(el!==selBrain()){ui.sel=world.snakes.indexOf(el);buildTabs();buildTree()}}else world.event('Director: no eligible snake')}
   else if(ui.tool==='poke'){const near=world.snakes.filter(b=>!b.dead&&!b.gone&&dist(b.body.head,p)<20).sort((a,b)=>dist(a.body.head,p)-dist(b.body.head,p))[0]||selBrain();
-    const c=near.ctx;c.threatPoint=p;near.drives.stress=1;c.ev('threatened')}
+    const c=near.ctx;c.threatPoint=p;near.drives.stress=1;c.stressSrc='poke';c.ev('threatened')}
 });
 
 // domain tree DOM
@@ -2416,7 +2821,7 @@ function buildTree(){
   walk(root,0);
 }
 const fmt=n=>n.toFixed(2);
-const clockStr=()=>{const h=Math.floor(clock.day*24),m=Math.floor((clock.day*24-h)*60);return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} · ${TOD_NAMES[todOf(clock.day)]} · t ${Math.floor(clock.t)} s`};
+const clockStr=()=>{const h=Math.floor(clock.day*24),m=Math.floor((clock.day*24-h)*60);return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} · ${TOD_NAMES[todOf(clock.day)]} · ${weather.label()} · t ${Math.floor(clock.t)} s`};
 const esc=s=>String(s).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
 function updatePanel(){
   const brain=selBrain(),c=brain.ctx,pl=brain.planner;
@@ -2429,7 +2834,7 @@ function updatePanel(){
   const q=[];if(pl.current)q.push(`<li class="cur">▶ ${esc(pl.current.name)}</li>`);pl.queue.forEach(t=>q.push(`<li>${esc(t.name)}</li>`));pl.partial.forEach(p=>q.push(`<li>⏸ resume ${esc(p.task.name)} at step ${p.index}</li>`));
   $('#queue').innerHTML=q.join('')||'<li>empty</li>';
   $('#rejects').textContent=`${pl.rejected} rejected replans`;
-  const d=brain.drives;const dr=[['hunger',d.hunger,'#d6a23c'],['digestion',d.digestion,'#55b3a8'],['body heat',d.heat,'#e2654c'],['fatigue',d.fatigue,'#8b9b90'],['stress',d.stress,'#c58be0']];
+  const d=brain.drives;const dr=[['hunger',d.hunger,'#d6a23c'],['digestion',d.digestion,'#55b3a8'],['body heat',d.heat,'#e2654c'],['fatigue',d.fatigue,'#8b9b90'],['stress',d.stress,'#c58be0'],['condition',d.condition,'#9fbf6a']];
   $('#drives').innerHTML=dr.map(([n,v,col])=>`<span>${n}</span><span class="meter"><i style="width:${(v*100).toFixed(0)}%;background:${col}"></i></span><span class="num">${fmt(v)}</span>`).join('');
   const rows=[];const chan=b=>`${fmt(b.confidence)}${b.best?`<span class="chan c${b.best}">${['','scent','vib','sight'][b.best]}</span>`:''}`;
   // the other snake is a belief too (same three senses), shown first
@@ -2468,7 +2873,7 @@ function frame(now){
   if(ui.follow){const sb=selBrain().body,h=sb.head,k=ease(3.7,realDt);const tx=lerp(controls.target.x,h.x,k),tz=lerp(controls.target.z,h.z,k),ty=lerp(controls.target.y,sb.y>0.6?sb.y*0.8:0,ease(2,realDt));
     camera.position.x+=tx-controls.target.x;camera.position.z+=tz-controls.target.z;camera.position.y+=ty-controls.target.y;controls.target.set(tx,ty,tz)}
   controls.update();render(realDt);
-  panelT+=realDt;if(panelT>0.18){panelT=0;updatePanel();for(const b of world.snakes)updateLabel(b,true)}
+  if(now-panelT>180){panelT=now;updatePanel();for(const b of world.snakes)updateLabel(b,true)} // wall-clock cadence: the panel keeps up even at a very low frame rate
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
